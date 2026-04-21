@@ -1,10 +1,14 @@
 # Shared runtime dependencies for the NeuraWatch backend.
 # Pinned with lower bounds — lockfile strategy is out of scope for the demo.
 
-# Computer vision (NW-1004 / NW-1101)
+# Computer vision (NW-1004 / NW-1101 / NW-1103)
 # Ultralytics pinned per NW-1101 AC — see backend/app/services/inference_service.py
 # for the matching v8.4.0 weights asset URL.
+# `lap` is the Linear Assignment Package ByteTrack uses for association;
+# Ultralytics auto-installs it on first track() call, but pinning here
+# avoids the silent ~6s runtime pip install on first demo boot.
 ultralytics==8.4.40
+lap==0.5.13
 opencv-python-headless>=4.9.0
 numpy>=1.26.0
 
