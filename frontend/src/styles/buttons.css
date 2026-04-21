@@ -1,0 +1,53 @@
+/* Button primitives. Extracted from WebcamView in NW-1201 so NW-1202's
+ * upload CTA and NW-1502's Reset Demo reuse the same surface.
+ */
+
+.btn {
+  font-family: var(--f-body);
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.3;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  color: var(--ink-1);
+  transition: background var(--d-fast) ease-out,
+    color var(--d-fast) ease-out,
+    border-color var(--d-fast) ease-out;
+}
+
+.btn:hover {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.btn--primary {
+  background: var(--cyan);
+  color: var(--ink-on-cyan);
+  border-color: var(--cyan);
+}
+
+.btn--primary:hover {
+  background: var(--cyan-d);
+  border-color: var(--cyan-d);
+  color: var(--ink-on-cyan);
+}
+
+.btn--danger {
+  background: transparent;
+  color: var(--red);
+  border-color: var(--red-bd);
+}
+
+.btn--danger:hover {
+  background: var(--red-ht);
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.btn:disabled,
+.btn.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

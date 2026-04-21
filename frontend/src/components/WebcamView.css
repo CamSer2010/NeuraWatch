@@ -1,0 +1,125 @@
+/* WebcamView — NW-1201
+ *
+ * Layout:
+ *   .webcam-view              section wrapper
+ *     .webcam-view__stage     4:3 aspect holding <video> + slates
+ *       <video>               640×480 feed, always in the DOM
+ *       .webcam-view__slate   idle / requesting overlay (z-indexed above video)
+ *       .webcam-view__alert   denied / error overlay (z-indexed above video)
+ *     <canvas>                offscreen capture canvas (display: none)
+ *     .webcam-view__controls  button row under the stage
+ *
+ * Every color, spacing, radius, and font-family resolves to a token
+ * in tokens.css. Button primitives live in styles/buttons.css.
+ */
+
+.webcam-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  align-items: flex-start;
+}
+
+.webcam-view__stage {
+  position: relative;
+  width: var(--capture-w);
+  height: var(--capture-h);
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+/* The <video> is sized to exactly 640×480. When the camera returns a
+ * different native resolution the browser does the resize; either way
+ * the capture canvas samples at 640×480. Always visible once mounted —
+ * we use z-index layering above, not opacity, so the browser doesn't
+ * throttle the decode pipeline when the slate is visible. */
+.webcam-view__video {
+  position: absolute;
+  inset: 0;
+  width: var(--capture-w);
+  height: var(--capture-h);
+  display: block;
+  background: var(--bg-0);
+  z-index: 1;
+}
+
+/* Slates and alert panels cover the stage whenever the webcam is not
+ * actively streaming; they're above the video in z-order. */
+.webcam-view__slate,
+.webcam-view__alert {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  background: linear-gradient(180deg, var(--cyan-g) 0%, transparent 60%),
+    var(--bg-1);
+  color: var(--ink-1);
+}
+
+.webcam-view__alert {
+  background: linear-gradient(180deg, var(--red-bg) 0%, transparent 60%),
+    var(--bg-1);
+  border-left: 3px solid var(--red);
+}
+
+.webcam-view__eyebrow {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0;
+}
+
+.webcam-view__eyebrow--red {
+  color: var(--red);
+}
+
+.webcam-view__title {
+  font-family: var(--f-display);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--ink-0);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.webcam-view__lede {
+  font-family: var(--f-body);
+  font-size: 14px;
+  color: var(--ink-2);
+  margin: 0;
+  max-width: 440px;
+  line-height: 1.5;
+}
+
+.webcam-view__steps {
+  margin: 0;
+  padding-left: var(--sp-5);
+  color: var(--ink-1);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.webcam-view__steps li {
+  margin-bottom: var(--sp-1);
+}
+
+/* Offscreen capture canvas — NW-1203 owns the draw calls. */
+.webcam-view__capture {
+  display: none;
+}
+
+.webcam-view__controls {
+  display: flex;
+  gap: var(--sp-3);
+}

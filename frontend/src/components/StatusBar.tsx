@@ -1,18 +1,29 @@
+import type { AppStatus } from '../types'
+import { StatusBadge } from './StatusBadge'
 import './StatusBar.css'
 
 /**
- * Placeholder StatusBar for the NW-1003 scaffold.
- *
- * NW-1502 wires real content: connection badge, FPS indicator, and
- * the Reset Demo button (POST /session/reset per NW-1405).
+ * Scaffold header. NW-1502 promotes this into the design-specs
+ * `AppHeader` with `FpsReadout` and the Reset Demo button
+ * (NW-1405) in the right slot. The StatusBadge itself is already
+ * the spec-defined component and will carry over unchanged.
  */
-export function StatusBar() {
+export interface StatusBarProps {
+  status: AppStatus
+}
+
+export function StatusBar({ status }: StatusBarProps) {
   return (
     <header className="status-bar">
-      <h1 className="status-bar__title">NeuraWatch</h1>
-      <span className="status-bar__badge">scaffold</span>
+      <div className="status-bar__brand">
+        <span className="status-bar__logo" aria-hidden="true" />
+        <span className="status-bar__name">NeuraWatch</span>
+      </div>
+      <div className="status-bar__center">
+        <StatusBadge status={status} />
+      </div>
       <div className="status-bar__actions">
-        {/* NW-1502: connection badge + FPS indicator + Reset Demo button land here. */}
+        {/* NW-1502: FPS readout + Reset Demo button land here. */}
       </div>
     </header>
   )

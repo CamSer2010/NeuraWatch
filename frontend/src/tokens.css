@@ -1,0 +1,90 @@
+/* Design tokens — mirrored from frontend/design-specs/README.md.
+ * Every color, spacing value, radius, motion duration, and font-family
+ * used by app components must resolve to one of these custom properties.
+ * No magic numbers in components.
+ */
+
+:root {
+  /* Surfaces (darkest → lightest) */
+  --bg-0: #0A0F14;   /* page floor */
+  --bg-1: #0F1620;   /* app surface, alerts panel */
+  --bg-2: #131C27;   /* buttons, hover rows, chips */
+  --bg-3: #1A2431;   /* modals, drawer, insets */
+  --bg-4: #22303F;   /* dropdown, highest */
+
+  /* Ink (primary → subtle) */
+  --ink-0: #F2F6FA;  /* headings, values */
+  --ink-1: #C9D3DE;  /* body copy */
+  --ink-2: #8FA0B3;  /* help text, captions */
+  --ink-3: #5F7082;  /* eyebrows, timestamps */
+  --ink-4: #3E4C5C;  /* disabled */
+
+  /* Accents */
+  --cyan:   #18E1D9; /* primary — live state, bboxes, CTAs, focus */
+  --cyan-d: #0FB3AC; /* cyan hover */
+  --amber:  #F5A524; /* in-zone, exit events, disconnected */
+  --violet: #A78BFA; /* enter events, processing */
+  --green:  #22C55E; /* success */
+  --red:    #F43F5E; /* error, camera-denied */
+
+  /* Accent glows / tints (used as translucent fills) */
+  --cyan-g: rgba(24, 225, 217, 0.04);  /* subtle slate top-light */
+  --red-bg: rgba(244, 63, 94, 0.06);   /* denied/error panel wash */
+  --red-ht: rgba(244, 63, 94, 0.10);   /* danger button hover */
+  --red-bd: rgba(244, 63, 94, 0.30);   /* danger button rest border */
+
+  /* Ink literally used on cyan surfaces (bbox labels, primary button,
+   * pin legends, and anywhere we put readable text on --cyan). */
+  --ink-on-cyan: #051F1E;
+
+  /* Hairlines */
+  --line:   rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.10);
+  --line-3: rgba(255, 255, 255, 0.18);
+
+  /* Locked capture dimensions (ratified decision #3). The stage, the
+   * <video>, and the capture <canvas> all pin to these. */
+  --capture-w: 640px;
+  --capture-h: 480px;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* Radii */
+  --r-sm: 2px;  /* bboxes */
+  --r-md: 6px;  /* buttons, chips, badges */
+  --r-lg: 8px;  /* cards, drawer, modal */
+  --r-xl: 12px; /* feed panel */
+
+  /* Shadows */
+  --shadow-sm:    0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md:    0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-focus: 0 0 0 2px var(--cyan);
+
+  /* Motion */
+  --d-fast:  140ms;  /* hover, button press */
+  --d-base:  200ms;  /* drawer, panel show/hide */
+  --d-slow:  2000ms; /* new-alert tint fade */
+  --d-pulse: 1400ms; /* status-dot pulse */
+
+  /* Fonts */
+  --f-display: 'Space Grotesk', system-ui, sans-serif;
+  --f-body:    'Inter', system-ui, sans-serif;
+  --f-mono:    'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* prefers-reduced-motion: kill pulses and long transitions. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --d-fast:  0.01ms;
+    --d-base:  0.01ms;
+    --d-slow:  0.01ms;
+    --d-pulse: 0.01ms;
+  }
+}
