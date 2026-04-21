@@ -1,0 +1,7 @@
+# Minimum deps for NW-1004 FPS benchmark.
+# NW-1002 will append FastAPI, uvicorn, shapely, aiosqlite, pydantic,
+# python-multipart, websockets on top of this file.
+
+ultralytics>=8.1.0
+opencv-python-headless>=4.9.0
+numpy>=1.26.0
