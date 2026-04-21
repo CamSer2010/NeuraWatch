@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init *)",
+      "Bash(git config *)",
+      "Bash(rm -rf .git)",
+      "Bash(mv .claude /tmp/neurawatch-claude-backup)",
+      "Bash(git clone *)",
+      "Bash(mv /tmp/neurawatch-claude-backup .claude)",
+      "Bash(git checkout *)",
+      "Bash(git add *)"
+    ]
+  }
+}
