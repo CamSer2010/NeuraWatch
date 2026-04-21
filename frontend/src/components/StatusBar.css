@@ -1,28 +1,57 @@
+/* StatusBar — NW-1003 scaffold restyled per design-specs tokens.
+ * Evolves into AppHeader in NW-1502. The StatusBadge styles live in
+ * StatusBadge.css so NW-1502 can import the component standalone.
+ */
+
 .status-bar {
+  height: 64px;
+  padding: 0 var(--sp-6);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-2);
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  padding: 0.75rem 1.5rem;
-  background: #1e293b;
-  border-bottom: 1px solid #334155;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
 }
 
-.status-bar__title {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
+.status-bar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
 }
 
-.status-bar__badge {
-  font-size: 0.75rem;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.status-bar__logo {
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(135deg, var(--cyan), var(--cyan-d));
+  border-radius: var(--r-md);
+  position: relative;
+}
+
+.status-bar__logo::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1.5px solid var(--bg-0);
+  border-radius: 1px;
+}
+
+.status-bar__name {
+  font-family: var(--f-display);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: -0.005em;
+  color: var(--ink-0);
+}
+
+.status-bar__center {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
 }
 
 .status-bar__actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-left: auto;
+  gap: var(--sp-2);
 }

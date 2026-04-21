@@ -1,0 +1,86 @@
+/* StatusBadge — one of the 13 components in design-specs.
+ * Extracted from StatusBar in NW-1201 so NW-1502 can slot it in
+ * without a rewrite.
+ */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+}
+
+.status-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-2);
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+.status-badge--idle {
+  background: rgba(143, 160, 179, 0.08);
+  border-color: rgba(143, 160, 179, 0.2);
+  color: var(--ink-1);
+}
+
+.status-badge--model-loading {
+  background: rgba(143, 160, 179, 0.08);
+  border-color: rgba(143, 160, 179, 0.2);
+  color: var(--ink-1);
+}
+
+.status-badge--live {
+  background: rgba(24, 225, 217, 0.10);
+  border-color: rgba(24, 225, 217, 0.30);
+  color: var(--cyan);
+}
+
+.status-badge--live .status-badge__dot {
+  background: var(--cyan);
+  animation: status-pulse var(--d-pulse) infinite;
+}
+
+.status-badge--processing {
+  background: rgba(167, 139, 250, 0.08);
+  border-color: rgba(167, 139, 250, 0.30);
+  color: var(--violet);
+}
+
+.status-badge--processing .status-badge__dot {
+  background: var(--violet);
+  animation: status-pulse var(--d-pulse) infinite;
+}
+
+.status-badge--disconnected {
+  background: rgba(245, 165, 36, 0.10);
+  border-color: rgba(245, 165, 36, 0.30);
+  color: var(--amber);
+}
+
+.status-badge--disconnected .status-badge__dot {
+  background: var(--amber);
+}
+
+.status-badge--camera-denied,
+.status-badge--error {
+  background: var(--red-ht);
+  border-color: var(--red-bd);
+  color: var(--red);
+}
+
+.status-badge--camera-denied .status-badge__dot,
+.status-badge--error .status-badge__dot {
+  background: var(--red);
+}

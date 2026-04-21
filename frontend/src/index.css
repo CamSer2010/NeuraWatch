@@ -1,8 +1,12 @@
+@import './tokens.css';
+
 :root {
-  font-family: system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+  font-family: var(--f-body);
   line-height: 1.5;
-  color: #e5e7eb;
-  background: #0f172a;
+  color: var(--ink-0);
+  background: var(--bg-0);
+  -webkit-font-smoothing: antialiased;
 }
 
 *,
@@ -14,8 +18,22 @@
 body {
   margin: 0;
   min-height: 100vh;
+  background: var(--bg-0);
 }
 
 #root {
   min-height: 100vh;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Spec-mandated focus ring for every interactive element.
+ * Browsers that support :focus-visible will only paint this on
+ * keyboard focus; mouse focus stays clean. */
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
 }

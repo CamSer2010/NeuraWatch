@@ -2,14 +2,16 @@
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  background: var(--bg-0);
+  color: var(--ink-0);
 }
 
 .app__main {
   flex: 1;
-  padding: 1.5rem;
-}
-
-.app__placeholder {
-  color: #94a3b8;
-  font-size: 0.875rem;
+  padding: var(--sp-6);
+  /* The ratified 70/30 monitor layout lands in NW-1204/1404. For
+   * NW-1201 the webcam view sits alone, aligned top-left. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
 }
