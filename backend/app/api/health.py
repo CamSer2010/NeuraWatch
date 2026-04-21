@@ -10,7 +10,8 @@ router = APIRouter(tags=["system"])
 
 @router.get("/health")
 async def health(request: Request) -> dict:
+    svc = getattr(request.app.state, "inference_service", None)
     return {
         "status": "healthy",
-        "model_loaded": bool(getattr(request.app.state, "model_loaded", False)),
+        "model_loaded": bool(svc and svc.is_loaded),
     }

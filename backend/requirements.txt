@@ -2,7 +2,9 @@
 # Pinned with lower bounds — lockfile strategy is out of scope for the demo.
 
 # Computer vision (NW-1004 / NW-1101)
-ultralytics>=8.1.0
+# Ultralytics pinned per NW-1101 AC — see backend/app/services/inference_service.py
+# for the matching v8.4.0 weights asset URL.
+ultralytics==8.4.40
 opencv-python-headless>=4.9.0
 numpy>=1.26.0
 
