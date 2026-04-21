@@ -7,11 +7,12 @@ startup via app/main.py lifespan and shared across requests via
 Scope progression:
   NW-1101 — load + basic predict + verbose=False.
   NW-1102 — class filter + normalization + structured Detection output.
-  NW-1103 — this file — swap predict() for model.track() with ByteTrack
-            persistence. Fills Detection.track_id. Exposes a
-            single-active-session guard and a reset_tracker() hook.
-  NW-1104 — wraps this service behind a unified frame-processing API
-            keyed by seq/frame_id.
+  NW-1103 — swap predict() for model.track() with ByteTrack persistence.
+            Fills Detection.track_id. Session guard + reset_tracker().
+  NW-1104 — this file — process_frame() produces wire-ready
+            WireDetections with normalized 0-1 bboxes and swallows
+            inference errors. FrameProcessor (sibling module) owns
+            the worker thread + size-1 queue + latest-wins semantics.
 
 ByteTrack defaults (Ultralytics bundled bytetrack.yaml):
   track_high_thresh: 0.25   — first-association confidence floor
@@ -26,13 +27,16 @@ ByteTrack defaults (Ultralytics bundled bytetrack.yaml):
 from __future__ import annotations
 
 import hashlib
+import logging
 import urllib.request
 from pathlib import Path
 
 import numpy as np
 from ultralytics import YOLO
 
-from ..models.schemas import Detection, ObjectClass
+from ..models.schemas import Detection, ObjectClass, WireDetection
+
+logger = logging.getLogger(__name__)
 
 # Pinned to the Ultralytics v8.4.0 asset release. The library version
 # (`ultralytics==8.4.40` in requirements.txt) is intentionally one
@@ -143,11 +147,13 @@ class InferenceService:
     def predict(self, frame: np.ndarray) -> list[Detection]:
         """Run detection + tracking on a single HWC BGR frame.
 
-        Method name retained for NW-1101/1102 call-site compatibility;
-        internally calls `model.track()` now — the return contract is
-        the same (list[Detection]), just with `track_id` populated from
-        ByteTrack. Tracker state persists across calls via `persist=True`;
-        NW-1104 will wrap this with seq-keyed calls.
+        Despite the name `predict`, this internally calls `model.track()` —
+        it's the tracking path, not plain detection. Name retained for
+        NW-1101/1102 call-site compatibility.
+
+        Returns `Detection`s with **pixel** bbox in the input-frame
+        coordinate space. Used by the smoke script (verify_inference.py)
+        and by `process_frame()` which normalizes for the wire.
         """
         if self._model is None:
             raise RuntimeError(
@@ -155,6 +161,51 @@ class InferenceService:
             )
         results = self._model.track(frame, **self._track_kwargs)
         return _parse_results(results)
+
+    def process_frame(self, frame: np.ndarray) -> list[WireDetection]:
+        """Production API: inference + normalization + error isolation.
+
+        This is the method NW-1203's WS handler calls (via
+        `FrameProcessor`). Bboxes are normalized 0-1 against
+        `frame.shape[:2]` so the WS payload matches ratified
+        decision #5 without further transformation on the wire.
+
+        Any exception inside inference or parsing is caught and logged;
+        the caller gets an empty list back instead of a propagated
+        error. One bad frame cannot crash the WS loop.
+        """
+        try:
+            if self._model is None:
+                return []
+            if frame.ndim != 3 or frame.shape[2] != 3:
+                logger.warning(
+                    "process_frame: unexpected frame shape %s; dropping",
+                    frame.shape,
+                )
+                return []
+
+            h, w = frame.shape[:2]
+            if w <= 0 or h <= 0:
+                return []
+
+            pixel_dets = self.predict(frame)
+            return [
+                WireDetection(
+                    object_class=d.object_class,
+                    bbox=(
+                        d.bbox[0] / w,
+                        d.bbox[1] / h,
+                        d.bbox[2] / w,
+                        d.bbox[3] / h,
+                    ),
+                    confidence=d.confidence,
+                    track_id=d.track_id,
+                )
+                for d in pixel_dets
+            ]
+        except Exception:
+            logger.exception("process_frame failed; returning empty list")
+            return []
 
     # -------- session guard (NW-1103 AC, NW-1203 consumer) ----------------
 

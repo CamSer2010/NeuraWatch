@@ -1,7 +1,8 @@
 """Shared Pydantic schemas.
 
 Populated incrementally:
-  NW-1102 — Detection (this file, below).
+  NW-1102 — Detection (pixel xyxy, internal).
+  NW-1104 — WireDetection (normalized 0-1, external / WS wire form).
   NW-1303 — ZoneEvent (enter/exit transitions).
   NW-1402 — Alert (DB-persisted form).
   NW-1202 — UploadMetadata.
@@ -10,17 +11,15 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 ObjectClass = Literal["person", "vehicle", "bicycle"]
 
 
 class Detection(BaseModel):
-    """One detected object after class normalization.
+    """One detected object after class normalization — **internal**.
 
-    Returned by `InferenceService.predict()`. NW-1103 populates
-    `track_id` via `model.track()`; NW-1203 normalizes `bbox` to
-    0-1 on the way out to the WebSocket wire.
+    Returned by `InferenceService.predict()` and `_parse_results`.
     """
 
     object_class: ObjectClass
@@ -29,13 +28,58 @@ class Detection(BaseModel):
 
     Ultralytics' `boxes.xyxy` is already mapped back from its internal
     640×640 letterboxed inference canvas to the original input frame
-    dimensions (e.g. 480×640 for the NW-1201 webcam capture), so
-    consumers can draw these coords directly on the source frame
-    without re-deriving the letterbox transform.
+    dimensions, so consumers can draw these coords directly on the
+    source frame without re-deriving the letterbox transform.
 
-    NW-1203 normalizes to 0-1 against the 640×480 processed frame
-    per ratified decision #5.
+    `WireDetection` carries the 0-1 normalized form (NW-1104).
     """
 
     confidence: float
     track_id: Optional[int] = None
+
+
+class WireDetection(BaseModel):
+    """One detected object in the shape the WebSocket wire expects.
+
+    Identical fields to `Detection` except `bbox` is normalized 0-1
+    against the processed frame dimensions (NW-1104 AC, ratified
+    decision #5). Kept as a separate type so `Detection` (pixel-space)
+    and `WireDetection` (normalized) can't silently collapse into each
+    other and cause the 30-minute "why don't my bboxes line up" bug.
+
+    Produced by `InferenceService.process_frame()`. Consumed by
+    NW-1203's WS handler with no further transformation.
+    """
+
+    object_class: ObjectClass = Field(
+        description="Normalized category: person | vehicle | bicycle."
+    )
+    bbox: tuple[float, float, float, float] = Field(
+        description=(
+            "Normalized xyxy in [0, 1]: (x1, y1, x2, y2) relative to the "
+            "processed frame's (width, height). Multiply by the frame size "
+            "to recover pixel coords."
+        )
+    )
+    confidence: float = Field(
+        description="Detection confidence, 0-1.",
+    )
+    track_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "ByteTrack ID; None on the first frame before association "
+            "or when tracking is disabled."
+        ),
+    )
+
+
+class ProcessedFrame(BaseModel):
+    """FrameProcessor.submit() return value.
+
+    Carries the original frame's `seq` back to the caller so NW-1203's
+    WS handler can build its detection_result envelope without
+    maintaining a seq→frame map on the side.
+    """
+
+    seq: int = Field(description="Monotonic frame sequence the caller submitted.")
+    detections: list[WireDetection] = Field(default_factory=list)

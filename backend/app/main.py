@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.health import router as health_router
 from .config import get_settings
+from .services.frame_processor import FrameProcessor
 from .services.inference_service import InferenceService
 
 
@@ -35,7 +36,18 @@ async def lifespan(app: FastAPI):
     )
     await asyncio.to_thread(inference_service.load)
     app.state.inference_service = inference_service
-    yield
+
+    # NW-1104: FrameProcessor owns the worker thread + size-1 queue
+    # so the NW-1203 WS handler can submit frames without blocking
+    # its receive loop. Latest-wins dropping is enforced here.
+    frame_processor = FrameProcessor(inference_service)
+    frame_processor.start()
+    app.state.frame_processor = frame_processor
+
+    try:
+        yield
+    finally:
+        frame_processor.stop()
 
 
 def create_app() -> FastAPI:
