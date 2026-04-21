@@ -31,6 +31,7 @@ async def lifespan(app: FastAPI):
     inference_service = InferenceService(
         weights_path=settings.model_weights_dir / "yolov8n.pt",
         imgsz=settings.inference_imgsz,
+        conf_threshold=settings.confidence_threshold,
     )
     await asyncio.to_thread(inference_service.load)
     app.state.inference_service = inference_service

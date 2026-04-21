@@ -18,3 +18,8 @@ python-multipart>=0.0.9
 # Async persistence + zone math
 aiosqlite>=0.20.0
 shapely>=2.0.0
+
+# Test runner (NW-1102 unit tests and beyond). Kept in main requirements
+# rather than a split requirements-dev.txt to keep the 3-day setup
+# single-command.
+pytest>=8.0.0

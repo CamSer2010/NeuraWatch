@@ -28,9 +28,11 @@ def main() -> None:
     service = InferenceService(
         weights_path=settings.model_weights_dir / "yolov8n.pt",
         imgsz=settings.inference_imgsz,
+        conf_threshold=settings.confidence_threshold,
     )
-    print(f"Weights: {service.weights_path}")
-    print(f"imgsz:   {service.imgsz}")
+    print(f"Weights:         {service.weights_path}")
+    print(f"imgsz:           {service.imgsz}")
+    print(f"conf_threshold:  {service.conf_threshold}")
     print()
 
     t0 = time.perf_counter()
@@ -41,11 +43,15 @@ def main() -> None:
         0, 255, (480, 640, 3), dtype=np.uint8
     )
     t0 = time.perf_counter()
-    results = service.predict(frame)
+    detections = service.predict(frame)
     print(f"Inference: {(time.perf_counter() - t0) * 1000:.1f} ms")
 
-    n_det = len(results[0].boxes) if len(results) > 0 else 0
-    print(f"Detections on synthetic frame (unfiltered): {n_det}")
+    print(f"Detections on synthetic frame: {len(detections)}")
+    for d in detections:
+        print(
+            f"  - class={d.object_class} conf={d.confidence:.3f} "
+            f"bbox=({d.bbox[0]:.1f},{d.bbox[1]:.1f})->({d.bbox[2]:.1f},{d.bbox[3]:.1f})"
+        )
 
 
 if __name__ == "__main__":
