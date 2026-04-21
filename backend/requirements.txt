@@ -1,7 +1,18 @@
-# Minimum deps for NW-1004 FPS benchmark.
-# NW-1002 will append FastAPI, uvicorn, shapely, aiosqlite, pydantic,
-# python-multipart, websockets on top of this file.
+# Shared runtime dependencies for the NeuraWatch backend.
+# Pinned with lower bounds — lockfile strategy is out of scope for the demo.
 
+# Computer vision (NW-1004 / NW-1101)
 ultralytics>=8.1.0
 opencv-python-headless>=4.9.0
 numpy>=1.26.0
+
+# Web framework (NW-1002)
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-multipart>=0.0.9
+
+# Async persistence + zone math
+aiosqlite>=0.20.0
+shapely>=2.0.0
