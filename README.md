@@ -45,6 +45,23 @@ NeuraWatch targets **≥10 FPS end-to-end**. Inference resolution is locked by a
 
 **Locked: `INFERENCE_IMGSZ=640`** — highest `imgsz` clearing the headroom bar, best accuracy available without risking the 10 FPS target. Raw results committed at [`backend/scripts/benchmark_results.json`](./backend/scripts/benchmark_results.json).
 
+### When to re-run
+
+The benchmark is a **pre-flight gate**, not a runtime check. The app reads `INFERENCE_IMGSZ` from `.env` and runs against whatever value is there — you do **not** need to benchmark every time you start the app.
+
+| Situation | Re-run? |
+|---|---|
+| Same laptop, pulling new code | **No** — trust the locked value |
+| Cloning to test UI or small changes | **No** — benchmark isn't on the startup path |
+| Different demo machine (laptop swap, cloud instance, VM) | **Yes** — results are hardware-specific |
+| Same machine, swapping CPU ↔ GPU / MPS / CUDA | **Yes** |
+| Major version bump of `torch` or `ultralytics` | **Yes** |
+| End-to-end FPS looks wrong in the NW-1501 soak test | **Yes — diagnose before tuning** |
+
+The authoritative "does this demo hit 10 FPS?" check is **NW-1501's 60-second soak test** on the full pipeline (capture → WebSocket → inference → overlay), not this standalone benchmark. The benchmark proves the model can do it in isolation; the soak test proves the whole app can.
+
+**Practical rule:** run the benchmark once per hardware class, trust the locked value otherwise, always verify with the NW-1501 soak test before recording the Loom.
+
 ### Re-run the benchmark
 
 ```bash
@@ -54,7 +71,7 @@ python3 -m venv .venv
 .venv/bin/python scripts/benchmark_fps.py
 ```
 
-Expect ~3 minutes of sustained inference plus a one-time weights download.
+Expect ~3 minutes of sustained inference plus a one-time weights download. After the run, update `INFERENCE_IMGSZ` in `backend/.env` with the newly-chosen value.
 
 ## Contributing
 
