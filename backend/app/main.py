@@ -3,9 +3,9 @@
 Dev run (from `backend/`):
     .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-Scaffold only — no model load, no routes beyond /health. Model load
-lands in NW-1101; WS / alerts / upload routers land in NW-1203 / 1403 / 1202.
+WS / alerts / upload routers land in NW-1203 / 1403 / 1202.
 """
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,17 +13,27 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.health import router as health_router
 from .config import get_settings
+from .services.inference_service import InferenceService
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    # Ensure storage dirs exist before any router can write to them
-    # (NW-1402 snapshot save, NW-1202 upload land here).
+    # Ensure storage dirs exist before anything touches them
+    # (NW-1402 snapshots, NW-1202 uploads, NW-1101 weights).
     settings.frames_dir.mkdir(parents=True, exist_ok=True)
     settings.uploads_dir.mkdir(parents=True, exist_ok=True)
-    # Placeholder; NW-1101 wires the YOLO model load here and flips the flag.
-    app.state.model_loaded = False
+    settings.model_weights_dir.mkdir(parents=True, exist_ok=True)
+
+    # NW-1101: load YOLO once at startup. load() blocks (disk I/O
+    # + ~6MB weights download on first run); running it off the
+    # event loop keeps startup idiomatic.
+    inference_service = InferenceService(
+        weights_path=settings.model_weights_dir / "yolov8n.pt",
+        imgsz=settings.inference_imgsz,
+    )
+    await asyncio.to_thread(inference_service.load)
+    app.state.inference_service = inference_service
     yield
 
 
