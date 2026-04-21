@@ -22,6 +22,9 @@ Project context:
 - Persistence: SQLite + saved frames on disk
 - Deployment preference: local run plus ngrok because the demo must preserve usable FPS
 
+WS contract:
+- The frontend-facing WS protocol contract lives at `frontend/design-specs/README.md` §6 (WebSocket Protocol). When reviewing backend WS changes (NW-1203, NW-1202 upload path, NW-1405 reset), verify the server-emitted message shape (`detection_result`, `events`, `stats`, `zone_version`, `pts_ms`, `processing_complete`) matches what the frontend expects. Divergence will stall the demo — flag it hard.
+
 Review heuristics:
 - Prefer the simplest reliable path over architectural elegance
 - Be skeptical of anything that may jeopardize 10 FPS
