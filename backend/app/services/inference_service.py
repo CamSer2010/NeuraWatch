@@ -1,4 +1,4 @@
-"""YOLOv8n model loader and inference driver.
+"""YOLOv8n model loader + detection-and-tracking driver.
 
 Owns the single long-lived model instance. Loaded once at FastAPI
 startup via app/main.py lifespan and shared across requests via
@@ -6,11 +6,22 @@ startup via app/main.py lifespan and shared across requests via
 
 Scope progression:
   NW-1101 — load + basic predict + verbose=False.
-  NW-1102 — this file — class filter + normalization (COCO → person/
-            vehicle/bicycle) + structured Detection output.
-  NW-1103 — swap predict() for model.track() with ByteTrack persistence.
+  NW-1102 — class filter + normalization + structured Detection output.
+  NW-1103 — this file — swap predict() for model.track() with ByteTrack
+            persistence. Fills Detection.track_id. Exposes a
+            single-active-session guard and a reset_tracker() hook.
   NW-1104 — wraps this service behind a unified frame-processing API
             keyed by seq/frame_id.
+
+ByteTrack defaults (Ultralytics bundled bytetrack.yaml):
+  track_high_thresh: 0.25   — first-association confidence floor
+  track_low_thresh:  0.10   — second-association floor (for lost tracks)
+  new_track_thresh:  0.25   — confidence needed to open a new track
+  track_buffer:      30     — frames a lost track is kept for re-id.
+                              At 10 FPS this is 3s — comfortably covers
+                              the NW-1103 AC's 0.5s occlusion (5 frames).
+  match_thresh:      0.8    — IoU threshold for association
+  fuse_score:        True   — combine detection+track score for matching
 """
 from __future__ import annotations
 
@@ -54,9 +65,18 @@ _CLASS_MAP: dict[int, ObjectClass] = {
 }
 _TARGET_CLASSES: list[int] = list(_CLASS_MAP.keys())
 
+_TRACKER_CONFIG = "bytetrack.yaml"
+
 
 class InferenceService:
-    """One model, one process. Not thread-safe; the WS handler serializes frames."""
+    """One model, one process.
+
+    Not thread-safe: ByteTrack state lives in `model.predictor.trackers`,
+    so interleaving frames from two sources corrupts IDs. The
+    single-session guard (claim_session/release_session) is the
+    application-level half of that invariant; NW-1203's WS handler
+    is expected to honor it.
+    """
 
     def __init__(
         self,
@@ -68,13 +88,29 @@ class InferenceService:
         self.imgsz = imgsz
         self.conf_threshold = conf_threshold
         self._model: YOLO | None = None
+        # Single-active-session guard per NW-1103 AC. The claim is
+        # advisory — NW-1203's WS handler calls claim/release; concurrent
+        # claims from a different session_id are rejected to keep
+        # ByteTrack state coherent.
+        self._active_session: str | None = None
+        # Track-call kwargs cached once; Ultralytics accepts them via **.
+        self._track_kwargs: dict = {
+            "persist": True,
+            "tracker": _TRACKER_CONFIG,
+            "imgsz": imgsz,
+            "classes": _TARGET_CLASSES,
+            "conf": conf_threshold,
+            "verbose": False,
+        }
+
+    # -------- lifecycle ---------------------------------------------------
 
     @property
     def is_loaded(self) -> bool:
         return self._model is not None
 
     def load(self) -> None:
-        """Ensure correct weights on disk, load the model, warm it up."""
+        """Ensure correct weights on disk, load the model, warm tracker+NMS."""
         self.weights_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Self-heal a corrupt partial download from a previous start.
@@ -95,37 +131,86 @@ class InferenceService:
         self._model = YOLO(str(self.weights_path))
         print(f"YOLOv8n loaded on device={self._model.device}, imgsz={self.imgsz}")
 
-        # Warmup with the same filter shape predict() uses — removes the
-        # cold-start spike on WS frame #1 and primes the NMS path too.
+        # Warmup: runs the same track() path predict() will use, priming
+        # forward + NMS + ByteTrack init. Reset the tracker afterwards so
+        # real frame #1 doesn't inherit any ID state from the dummy frame.
         dummy = np.zeros((480, 640, 3), dtype=np.uint8)
-        self._model.predict(
-            dummy,
-            imgsz=self.imgsz,
-            classes=_TARGET_CLASSES,
-            conf=self.conf_threshold,
-            verbose=False,
-        )
+        self._model.track(dummy, **self._track_kwargs)
+        self.reset_tracker()
+
+    # -------- inference ---------------------------------------------------
 
     def predict(self, frame: np.ndarray) -> list[Detection]:
-        """Run detection on a single HWC BGR frame.
+        """Run detection + tracking on a single HWC BGR frame.
 
-        Returns normalized `Detection`s (class -> person/vehicle/bicycle,
-        bbox in pixel xyxy over the original frame). Non-target classes
-        are filtered at inference time. NW-1103 swaps this for
-        `model.track()` and fills Detection.track_id.
+        Method name retained for NW-1101/1102 call-site compatibility;
+        internally calls `model.track()` now — the return contract is
+        the same (list[Detection]), just with `track_id` populated from
+        ByteTrack. Tracker state persists across calls via `persist=True`;
+        NW-1104 will wrap this with seq-keyed calls.
         """
         if self._model is None:
             raise RuntimeError(
                 "InferenceService.load() must complete before predict()"
             )
-        results = self._model.predict(
-            frame,
-            imgsz=self.imgsz,
-            classes=_TARGET_CLASSES,
-            conf=self.conf_threshold,
-            verbose=False,
-        )
+        results = self._model.track(frame, **self._track_kwargs)
         return _parse_results(results)
+
+    # -------- session guard (NW-1103 AC, NW-1203 consumer) ----------------
+
+    @property
+    def active_session(self) -> str | None:
+        return self._active_session
+
+    def claim_session(self, session_id: str) -> bool:
+        """Become the active session. Idempotent for the same session_id.
+
+        Returns False iff a different session currently holds the claim.
+        Callers (NW-1203 WS handler) should refuse the connection in that
+        case to keep ByteTrack state coherent. The refusal is also logged
+        here so the backend has a trace even if the caller forgets.
+        """
+        if (
+            self._active_session is not None
+            and self._active_session != session_id
+        ):
+            print(
+                f"InferenceService: claim refused for {session_id!r}; "
+                f"active session is {self._active_session!r}"
+            )
+            return False
+        self._active_session = session_id
+        return True
+
+    def release_session(self, session_id: str) -> None:
+        """Release the claim if `session_id` matches; also resets ByteTrack.
+
+        Mismatched releases are no-ops so a late disconnect from an already-
+        evicted session can't clear an active one.
+        """
+        if self._active_session == session_id:
+            self._active_session = None
+            self.reset_tracker()
+
+    def reset_tracker(self) -> None:
+        """Clear ByteTrack state (used by NW-1405 POST /session/reset too).
+
+        Ultralytics stores per-task tracker instances on
+        `model.predictor.trackers`. Calling `.reset()` on each wipes
+        assigned IDs so the next frame starts from a clean slate.
+        """
+        if self._model is None:
+            return
+        predictor = getattr(self._model, "predictor", None)
+        trackers = getattr(predictor, "trackers", None) if predictor else None
+        if not trackers:
+            return
+        for tracker in trackers:
+            reset = getattr(tracker, "reset", None)
+            if callable(reset):
+                reset()
+
+    # -------- internals ---------------------------------------------------
 
     def _download_weights(self) -> None:
         print(f"Downloading YOLOv8n weights -> {self.weights_path}")
@@ -164,8 +249,17 @@ def _parse_results(results) -> list[Detection]:
     confs = r.boxes.conf.cpu().numpy()
     xyxy = r.boxes.xyxy.cpu().numpy()
 
+    # Track IDs may be absent on the very first frame before ByteTrack
+    # assigns them, or if tracking was skipped. Guard against None.
+    if r.boxes.id is not None:
+        track_ids: list[int | None] = (
+            r.boxes.id.cpu().numpy().astype(int).tolist()
+        )
+    else:
+        track_ids = [None] * len(cls_ids)
+
     out: list[Detection] = []
-    for cls_id, conf, box in zip(cls_ids, confs, xyxy):
+    for cls_id, conf, box, tid in zip(cls_ids, confs, xyxy, track_ids):
         object_class = _CLASS_MAP.get(int(cls_id))
         if object_class is None:
             # Defensive — should not happen when classes= is passed
@@ -177,6 +271,7 @@ def _parse_results(results) -> list[Detection]:
                 object_class=object_class,
                 bbox=(float(box[0]), float(box[1]), float(box[2]), float(box[3])),
                 confidence=float(conf),
+                track_id=int(tid) if tid is not None else None,
             )
         )
     return out

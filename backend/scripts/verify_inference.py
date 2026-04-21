@@ -50,6 +50,7 @@ def main() -> None:
     for d in detections:
         print(
             f"  - class={d.object_class} conf={d.confidence:.3f} "
+            f"track_id={d.track_id} "
             f"bbox=({d.bbox[0]:.1f},{d.bbox[1]:.1f})->({d.bbox[2]:.1f},{d.bbox[3]:.1f})"
         )
 
