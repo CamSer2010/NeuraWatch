@@ -1,0 +1,1271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>NeuraWatch — Frontend Handoff Spec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="handoff.css" />
+</head>
+<body>
+
+<!-- ═══ TOP BAR ═══ -->
+<header class="topbar">
+  <div class="brand">
+    <div class="logo"></div>
+    <span>NeuraWatch</span>
+    <span class="doctag">Frontend Handoff · v1.0</span>
+  </div>
+  <nav>
+    <a href="#tokens">Tokens</a>
+    <a href="#components">Components</a>
+    <a href="#screens">Screens</a>
+    <a href="#states">States</a>
+    <a href="#responsive">Responsive</a>
+    <a href="#ws">WS Protocol</a>
+    <a href="#a11y">A11y</a>
+  </nav>
+  <div class="meta">1920 · APR 2026</div>
+</header>
+
+<!-- ═══ HERO ═══ -->
+<div class="hero">
+  <div class="kicker">Design → Engineering Handoff</div>
+  <h1>Core screens<br/>developer spec</h1>
+  <p class="lede">
+    A complete, implementation-ready specification for every core screen in NeuraWatch.
+    Design tokens, component scaffolds, numbered redlines, interaction states, WebSocket payload mapping,
+    accessibility contracts, and responsive behavior — all targeted at 1920×1080 desktop with breakpoint notes.
+  </p>
+  <div class="facts">
+    <div class="fact"><div class="label">Target</div><div class="value"><span class="accent">1920</span>×1080 px</div></div>
+    <div class="fact"><div class="label">Stack</div><div class="value">React + TS + Vite</div></div>
+    <div class="fact"><div class="label">Components</div><div class="value"><span class="accent">13</span> primitives</div></div>
+    <div class="fact"><div class="label">Screens spec'd</div><div class="value"><span class="accent">7</span> core + 7 states</div></div>
+  </div>
+</div>
+
+<main class="doc">
+
+<!-- ═══════════════════════════════════════════════════════
+     §1 · DESIGN TOKENS
+  ═══════════════════════════════════════════════════════ -->
+<section class="sec" id="tokens">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">§1 · Design Tokens</div>
+      <h2>Design tokens</h2>
+    </div>
+    <div class="tagline">Ship as CSS custom properties on <code>:root</code>. Every hex, font, and pixel below should land as a named token — no magic numbers in component CSS.</div>
+  </div>
+
+  <div class="sub-h-eyebrow">1.1 · Color</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Surfaces, ink, and accents</div>
+
+  <div class="token-grid">
+    <div class="tg-row cgrid head">
+      <div>Swatch</div><div>Token</div><div>Value</div><div>Role</div><div>Usage</div>
+    </div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#0A0F14"></div><div class="token-name">--bg-0</div><div class="token-val">#0A0F14</div><div>Page floor</div><div class="token-desc">Body bg, section dividers, deepest recess</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#0F1620"></div><div class="token-name">--bg-1</div><div class="token-val">#0F1620</div><div>Surface primary</div><div class="token-desc">App bg, header, alerts panel</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#131C27"></div><div class="token-name">--bg-2</div><div class="token-val">#131C27</div><div>Surface raised</div><div class="token-desc">Buttons default, hover rows, chips bg</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#1A2431"></div><div class="token-name">--bg-3</div><div class="token-val">#1A2431</div><div>Surface elevated</div><div class="token-desc">Modals, drawers, inset fields</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#22303F"></div><div class="token-name">--bg-4</div><div class="token-val">#22303F</div><div>Surface highest</div><div class="token-desc">Control-strip bg, dropdown surfaces</div></div>
+
+    <div class="tg-row cgrid"><div class="swatch" style="background:#F2F6FA"></div><div class="token-name">--ink-0</div><div class="token-val">#F2F6FA</div><div>Text · primary</div><div class="token-desc">Headings, values, strong labels</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#C9D3DE"></div><div class="token-name">--ink-1</div><div class="token-val">#C9D3DE</div><div>Text · body</div><div class="token-desc">Paragraph, secondary headings</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#8FA0B3"></div><div class="token-name">--ink-2</div><div class="token-val">#8FA0B3</div><div>Text · muted</div><div class="token-desc">Help text, inactive tabs, captions</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#5F7082"></div><div class="token-name">--ink-3</div><div class="token-val">#5F7082</div><div>Text · subtle</div><div class="token-desc">Eyebrows, timestamps, metadata</div></div>
+
+    <div class="tg-row cgrid"><div class="swatch" style="background:#18E1D9"></div><div class="token-name">--cyan</div><div class="token-val">#18E1D9</div><div>Accent · primary</div><div class="token-desc">Live state, bboxes, primary CTAs, focus ring</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#F5A524"></div><div class="token-name">--amber</div><div class="token-val">#F5A524</div><div>Accent · alert</div><div class="token-desc">In-zone bbox, exit events, disconnected state</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#A78BFA"></div><div class="token-name">--violet</div><div class="token-val">#A78BFA</div><div>Accent · event</div><div class="token-desc">Enter events, processing state</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#22C55E"></div><div class="token-name">--green</div><div class="token-val">#22C55E</div><div>Semantic · success</div><div class="token-desc">Reserved: ready states, health checks</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:#F43F5E"></div><div class="token-name">--red</div><div class="token-val">#F43F5E</div><div>Semantic · error</div><div class="token-desc">Error state, Reset Demo ghost, fatal WS</div></div>
+
+    <div class="tg-row cgrid"><div class="swatch" style="background:rgba(255,255,255,0.06); background-image: linear-gradient(rgba(255,255,255,0.06), rgba(255,255,255,0.06)), linear-gradient(#0F1620,#0F1620)"></div><div class="token-name">--line</div><div class="token-val">rgba(255,255,255,.06)</div><div>Hairline · soft</div><div class="token-desc">Row dividers, alert-list separators</div></div>
+    <div class="tg-row cgrid"><div class="swatch" style="background:rgba(255,255,255,0.1); background-image: linear-gradient(rgba(255,255,255,0.1), rgba(255,255,255,0.1)), linear-gradient(#0F1620,#0F1620)"></div><div class="token-name">--line-2</div><div class="token-val">rgba(255,255,255,.10)</div><div>Hairline · default</div><div class="token-desc">Panel borders, button borders, card edges</div></div>
+  </div>
+
+  <div class="sub-h-eyebrow" style="margin-top: 40px;">1.2 · Typography</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Three families, compressed scale</div>
+
+  <div class="token-grid">
+    <div class="tg-row tgrid head">
+      <div>Style</div><div>Family</div><div>Size / Line</div><div>Weight</div><div>Usage</div>
+    </div>
+    <div class="tg-row tgrid"><div style="font-family:var(--f-display);font-size:32px;line-height:1;color:var(--ink-0)">Display L</div><div class="token-val">Space Grotesk</div><div class="token-val">48 / 1.1</div><div class="token-val">500</div><div class="token-desc">Empty-state hero, section heroes</div></div>
+    <div class="tg-row tgrid"><div style="font-family:var(--f-display);font-size:26px;line-height:1;color:var(--ink-0)">Display M</div><div class="token-val">Space Grotesk</div><div class="token-val">32 / 1.15</div><div class="token-val">500</div><div class="token-desc">Alert Detail title, modal headings</div></div>
+    <div class="tg-row tgrid"><div style="font-family:var(--f-display);font-size:18px;color:var(--ink-0)">Title</div><div class="token-val">Space Grotesk</div><div class="token-val">18 / 1.3</div><div class="token-val">500</div><div class="token-desc">Panel titles ("Alerts"), card headers</div></div>
+    <div class="tg-row tgrid"><div style="font-family:var(--f-display);font-size:15px;color:var(--ink-0)">Label</div><div class="token-val">Space Grotesk</div><div class="token-val">15 / 1.3</div><div class="token-val">500</div><div class="token-desc">App name, step numbers</div></div>
+    <div class="tg-row tgrid"><div style="font-family:var(--f-body);font-size:14px;color:var(--ink-1)">Body</div><div class="token-val">Inter</div><div class="token-val">14 / 1.5</div><div class="token-val">400</div><div class="token-desc">Paragraph, help text</div></div>
+    <div class="tg-row tgrid"><div style="font-family:var(--f-body);font-size:13px;color:var(--ink-1)">UI / Button</div><div class="token-val">Inter</div><div class="token-val">13 / 1.3</div><div class="token-val">500</div><div class="token-desc">Buttons, alert class names</div></div>
+    <div class="tg-row tgrid"><div style="font-family:var(--f-mono);font-size:12px;color:var(--cyan)">Mono · data</div><div class="token-val">JetBrains Mono</div><div class="token-val">12 / 1.4</div><div class="token-val">500</div><div class="token-desc">FPS, track IDs, confidence values</div></div>
+    <div class="tg-row tgrid"><div style="font-family:var(--f-mono);font-size:11px;color:var(--ink-3);letter-spacing:.14em;text-transform:uppercase">Mono · eyebrow</div><div class="token-val">JetBrains Mono</div><div class="token-val">11 / 1.4</div><div class="token-val">500</div><div class="token-desc">Section eyebrows, badge labels, timestamps</div></div>
+  </div>
+
+  <div class="note">
+    <strong>Letter-spacing.</strong> Body and UI copy use <code>letter-spacing: 0</code>. Mono eyebrows use <code>0.14em</code>. Titles use <code>-0.005em</code> to tighten display type. Never apply letter-spacing to body copy below 14px.
+  </div>
+
+  <div class="sub-h-eyebrow" style="margin-top: 40px;">1.3 · Spacing · Radii · Elevation</div>
+  <div class="sub-h"><span class="kicker-dot"></span> 4-pixel grid, tight radii, three shadow depths</div>
+
+  <div class="token-grid">
+    <div class="tg-row sgrid head"><div>Token</div><div>Value</div><div>Role</div><div>Where</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--sp-1</div><div class="token-val">4 px</div><div>Hairline gap</div><div class="token-desc">Icon→label, chip internal</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--sp-2</div><div class="token-val">8 px</div><div>Tight gap</div><div class="token-desc">Button cluster, chip row</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--sp-3</div><div class="token-val">12 px</div><div>Default gap</div><div class="token-desc">Alert row padding, card internal</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--sp-4</div><div class="token-val">16 px</div><div>Panel gap</div><div class="token-desc">Between cards, inside panels</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--sp-5</div><div class="token-val">20 px</div><div>Section gap</div><div class="token-desc">Alerts panel padding</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--sp-6</div><div class="token-val">24 px</div><div>Page edge</div><div class="token-desc">App header padding-x</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--sp-8</div><div class="token-val">32 px</div><div>Region gap</div><div class="token-desc">Hero spacing, empty state</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--r-sm</div><div class="token-val">2 px</div><div>Bbox radius</div><div class="token-desc">Detection boxes, overlay marks</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--r-md</div><div class="token-val">6 px</div><div>Control radius</div><div class="token-desc">Buttons, badges, chips</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--r-lg</div><div class="token-val">8 px</div><div>Panel radius</div><div class="token-desc">Cards, drawer, modal</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--r-xl</div><div class="token-val">12 px</div><div>Screen radius</div><div class="token-desc">Feed panel container</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--shadow-sm</div><div class="token-val">0 2px 8px rgba(0,0,0,.25)</div><div>Floating badge</div><div class="token-desc">FPS badge, source pill</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--shadow-md</div><div class="token-val">0 8px 24px rgba(0,0,0,.4)</div><div>Drawer · modal</div><div class="token-desc">Alert detail side-drawer</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--shadow-focus</div><div class="token-val">0 0 0 2px var(--cyan)</div><div>Focus ring</div><div class="token-desc">All keyboard-focusable controls</div></div>
+  </div>
+
+  <div class="sub-h-eyebrow" style="margin-top: 40px;">1.4 · Motion</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Short, restrained, operational</div>
+
+  <div class="token-grid">
+    <div class="tg-row sgrid head"><div>Token</div><div>Value</div><div>Curve</div><div>Usage</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--d-fast</div><div class="token-val">140 ms</div><div class="token-val">ease-out</div><div class="token-desc">Hover, button press, chip state</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--d-base</div><div class="token-val">200 ms</div><div class="token-val">ease-out</div><div class="token-desc">Drawer open, panel show/hide</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--d-slow</div><div class="token-val">2000 ms</div><div class="token-val">ease-out</div><div class="token-desc">New-alert tint fade-out</div></div>
+    <div class="tg-row sgrid"><div class="token-name">--d-pulse</div><div class="token-val">1400 ms infinite</div><div class="token-val">cubic-bezier(.4,0,.6,1)</div><div class="token-desc">Live status dot pulse</div></div>
+  </div>
+
+  <div class="note warn">
+    <strong>Motion budget.</strong> No spring physics. No transitions longer than 2 s. No parallax. No auto-playing decorative motion. <code>prefers-reduced-motion</code> disables the status-dot pulse and new-alert tint fade.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     §2 · COMPONENT INVENTORY
+  ═══════════════════════════════════════════════════════ -->
+<section class="sec" id="components">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">§2 · Component Inventory</div>
+      <h2>Components</h2>
+    </div>
+    <div class="tagline">Every screen in NeuraWatch composes from these 13 primitives. File names map to <code>frontend/src/components/</code>. If a screen need falls outside this set, escalate to design before building one-off.</div>
+  </div>
+
+  <table class="spec-table">
+    <thead><tr><th style="width: 40px">#</th><th>Component</th><th>File</th><th>Purpose</th><th>Props / State</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">01</td><td><code>&lt;AppHeader&gt;</code></td><td class="mono">AppHeader.tsx</td><td>Top bar: logo, status, FPS, Reset Demo</td><td class="mono">status, fps, sourceLabel, onReset</td></tr>
+      <tr><td class="mono">02</td><td><code>&lt;StatusBadge&gt;</code></td><td class="mono">StatusBadge.tsx</td><td>6-state pill (idle · live · processing · disc · error · loading)</td><td class="mono">state, label?</td></tr>
+      <tr><td class="mono">03</td><td><code>&lt;VideoSourceSelector&gt;</code></td><td class="mono">VideoSourcePanel.tsx</td><td>Segmented control: Webcam / Upload</td><td class="mono">source, onChange, onUpload</td></tr>
+      <tr><td class="mono">04</td><td><code>&lt;LiveFeedPanel&gt;</code></td><td class="mono">LiveFeedCanvas.tsx</td><td>Video + canvas stack, floating badges</td><td class="mono">mode, fps, zoneState, detections</td></tr>
+      <tr><td class="mono">05</td><td><code>&lt;DetectionCanvas&gt;</code></td><td class="mono">LiveFeedCanvas.tsx</td><td>rAF-driven overlay (bboxes, labels, polygon)</td><td class="mono">detections, polygon, zoneVersion</td></tr>
+      <tr><td class="mono">06</td><td><code>&lt;PolygonEditor&gt;</code></td><td class="mono">PolygonEditor.tsx</td><td>Click-to-add vertex + rubber-band preview</td><td class="mono">points, onAdd, onClose, onClear</td></tr>
+      <tr><td class="mono">07</td><td><code>&lt;PolygonToolbar&gt;</code></td><td class="mono">PolygonEditor.tsx</td><td>Draw · Close · Clear buttons</td><td class="mono">canClose, onDraw, onClose, onClear</td></tr>
+      <tr><td class="mono">08</td><td><code>&lt;MonitoringControls&gt;</code></td><td class="mono">VideoSourcePanel.tsx</td><td>Start / Stop / Pause monitoring</td><td class="mono">running, onStart, onStop</td></tr>
+      <tr><td class="mono">09</td><td><code>&lt;AlertsPanel&gt;</code></td><td class="mono">AlertsPanel.tsx</td><td>Right-column list, newest-first, virtualized</td><td class="mono">alerts, selectedId, onSelect</td></tr>
+      <tr><td class="mono">10</td><td><code>&lt;AlertListItem&gt;</code></td><td class="mono">AlertsPanel.tsx</td><td>Single alert row: thumb · meta · time</td><td class="mono">alert, isNew, selected</td></tr>
+      <tr><td class="mono">11</td><td><code>&lt;AlertDetailDrawer&gt;</code></td><td class="mono">AlertsPanel.tsx</td><td>Side drawer: saved frame + metadata</td><td class="mono">alertId, open, onClose</td></tr>
+      <tr><td class="mono">12</td><td><code>&lt;EmptyState&gt;</code></td><td class="mono">EmptyState.tsx</td><td>Pre-monitoring: 3-step onboarding</td><td class="mono">onSelectWebcam, onSelectUpload</td></tr>
+      <tr><td class="mono">13</td><td><code>&lt;SystemNotice&gt;</code></td><td class="mono">StatusBar.tsx</td><td>Transient toast (auto-dismisses)</td><td class="mono">tone, message, dismissMs</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-h-eyebrow" style="margin-top: 32px;">2.1 · Reference scaffold</div>
+  <div class="sub-h"><span class="kicker-dot"></span> <code>&lt;AppHeader&gt;</code> — root-level layout</div>
+
+  <div class="code"><span class="c">// AppHeader.tsx</span>
+<span class="k">import</span> { StatusBadge } <span class="k">from</span> <span class="s">'./StatusBadge'</span>;
+
+<span class="k">type</span> <span class="t">Props</span> = {
+  status: <span class="t">'idle'</span> | <span class="t">'live'</span> | <span class="t">'processing'</span> | <span class="t">'disconnected'</span> | <span class="t">'error'</span> | <span class="t">'loading'</span>;
+  fps: <span class="t">number</span> | <span class="t">null</span>;
+  sourceLabel?: <span class="t">string</span>;                      <span class="c">// "Webcam" | "clip_001.mp4"</span>
+  onReset: () =&gt; <span class="t">void</span>;
+};
+
+<span class="k">export function</span> <span class="t">AppHeader</span>({ status, fps, sourceLabel, onReset }: <span class="t">Props</span>) {
+  <span class="k">return</span> (
+    &lt;<span class="t">header</span> <span class="a">className</span>=<span class="s">"app-header"</span> <span class="a">role</span>=<span class="s">"banner"</span>&gt;
+      &lt;<span class="t">div</span> <span class="a">className</span>=<span class="s">"left"</span>&gt;
+        &lt;<span class="t">div</span> <span class="a">className</span>=<span class="s">"logo"</span> <span class="a">aria-hidden</span>=<span class="s">"true"</span> /&gt;
+        &lt;<span class="t">span</span> <span class="a">className</span>=<span class="s">"name"</span>&gt;NeuraWatch&lt;/<span class="t">span</span>&gt;
+      &lt;/<span class="t">div</span>&gt;
+      &lt;<span class="t">div</span> <span class="a">className</span>=<span class="s">"center"</span>&gt;
+        &lt;<span class="t">StatusBadge</span> <span class="a">state</span>={status} /&gt;
+        {fps !== <span class="k">null</span> &amp;&amp; &lt;<span class="t">span</span> <span class="a">className</span>=<span class="s">"fps-readout"</span>&gt;
+          &lt;<span class="t">span</span> <span class="a">className</span>=<span class="s">"label"</span>&gt;FPS&lt;/<span class="t">span</span>&gt;
+          &lt;<span class="t">span</span> <span class="a">className</span>=<span class="s">"val"</span>&gt;{fps.toFixed(<span class="s">1</span>)}&lt;/<span class="t">span</span>&gt;
+        &lt;/<span class="t">span</span>&gt;}
+        {sourceLabel &amp;&amp; &lt;<span class="t">span</span> <span class="a">className</span>=<span class="s">"source-tag"</span>&gt;{sourceLabel}&lt;/<span class="t">span</span>&gt;}
+      &lt;/<span class="t">div</span>&gt;
+      &lt;<span class="t">div</span> <span class="a">className</span>=<span class="s">"right"</span>&gt;
+        &lt;<span class="t">button</span> <span class="a">className</span>=<span class="s">"btn danger"</span> <span class="a">onClick</span>={onReset}&gt;Reset Demo&lt;/<span class="t">button</span>&gt;
+      &lt;/<span class="t">div</span>&gt;
+    &lt;/<span class="t">header</span>&gt;
+  );
+}</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     §3 · SCREENS
+  ═══════════════════════════════════════════════════════ -->
+<section class="sec" id="screens">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">§3 · Core Screens</div>
+      <h2>Core screens</h2>
+    </div>
+    <div class="tagline">Every screen, annotated with numbered pins. Pin legend maps each pin to its token, component, spacing, and interaction notes. Measurements are absolute at the 1920×1080 target.</div>
+  </div>
+
+  <!-- ═══ 3.1 EMPTY / SETUP STATE ═══ -->
+  <div class="sub-h-eyebrow">3.1 · Empty · Setup State</div>
+  <div class="sub-h"><span class="kicker-dot"></span> First view, before any source is connected</div>
+
+  <div class="figure">
+    <div class="screen">
+      <div class="chrome">
+        <div class="dots"><span></span><span></span><span></span></div>
+        <div class="urlbar">neurawatch.app/</div>
+      </div>
+      <div class="vp" style="min-height: 720px;">
+        <!-- app header -->
+        <div class="app-header" style="position: relative;">
+          <div class="left">
+            <div class="logo"></div>
+            <div class="name">NeuraWatch</div>
+          </div>
+          <div class="center">
+            <span class="status-badge idle"><span class="dot"></span>Idle</span>
+          </div>
+          <div class="right">
+            <button class="btn danger" disabled style="opacity:0.4">Reset Demo</button>
+          </div>
+          <div class="pin" style="top:50%; left: 8.5%;">1</div>
+          <div class="pin" style="top:50%; left: 48%;">2</div>
+        </div>
+
+        <!-- content -->
+        <div style="padding: 96px 120px 120px; max-width: 1200px; margin: 0 auto; position: relative;">
+          <div style="font-family:var(--f-mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--cyan); margin-bottom: 24px; display:flex; align-items:center; gap: 10px;">
+            <span style="width:28px; height: 1px; background: var(--cyan);"></span>
+            Welcome
+          </div>
+          <h1 style="font-family:var(--f-display); font-size: 48px; line-height: 1.1; margin: 0 0 20px; font-weight: 500; letter-spacing: -0.02em; color: var(--ink-0);">
+            Connect a source to<br/>begin monitoring.
+          </h1>
+          <p style="font-size: 16px; line-height: 1.55; color: var(--ink-1); max-width: 620px; margin: 0 0 56px;">
+            NeuraWatch detects and tracks people, vehicles, and bicycles in real time. Draw a zone on the feed to trigger enter and exit alerts.
+          </p>
+          <div class="pin" style="top: 130px; left: 650px;">3</div>
+
+          <!-- 3-step -->
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 64px; position: relative;">
+            <div style="background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 24px;">
+              <div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.18em; color: var(--cyan);">STEP 01</div>
+              <div style="font-family: var(--f-display); font-size: 17px; font-weight: 500; margin: 12px 0 6px; color: var(--ink-0);">Connect a source</div>
+              <div style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Use your webcam or upload a video file.</div>
+            </div>
+            <div style="background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 24px;">
+              <div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.18em; color: var(--ink-3);">STEP 02</div>
+              <div style="font-family: var(--f-display); font-size: 17px; font-weight: 500; margin: 12px 0 6px; color: var(--ink-0);">Draw a zone</div>
+              <div style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Click vertices on the feed to define a polygon.</div>
+            </div>
+            <div style="background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 24px;">
+              <div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.18em; color: var(--ink-3);">STEP 03</div>
+              <div style="font-family: var(--f-display); font-size: 17px; font-weight: 500; margin: 12px 0 6px; color: var(--ink-0);">Start monitoring</div>
+              <div style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Enter and exit alerts land in the side panel.</div>
+            </div>
+            <div class="pin" style="top: -10px; left: 190px;">4</div>
+          </div>
+
+          <!-- source selection -->
+          <div style="display:flex; gap: 16px; align-items: stretch; position: relative;">
+            <button class="btn primary" style="flex: 1; padding: 20px 24px; display:flex; flex-direction:column; align-items:flex-start; gap: 6px; text-align: left;">
+              <span style="font-family:var(--f-display); font-size: 16px; font-weight: 500;">Use webcam</span>
+              <span style="font-size: 12px; opacity: 0.7;">Live stream from this device · 640×480</span>
+            </button>
+            <button class="btn" style="flex: 1; padding: 20px 24px; display:flex; flex-direction:column; align-items:flex-start; gap: 6px; text-align: left; background: var(--bg-2); color: var(--ink-0); border-color: var(--line-2);">
+              <span style="font-family:var(--f-display); font-size: 16px; font-weight: 500;">Upload video</span>
+              <span style="font-size: 12px; color: var(--ink-2);">MP4 · MOV · ≤ 30 s · ≤ 100 MB</span>
+            </button>
+            <div class="pin" style="top: 0; left: 200px;">5</div>
+            <div class="pin" style="top: 0; right: 190px;">6</div>
+          </div>
+        </div>
+      </div>
+      <div class="screen-header">
+        <span>EmptyState · default</span>
+        <span class="state-chip">route: /</span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="li"><span class="num">1</span><span class="t"><strong>AppHeader · height 64</strong><code>bg: --bg-1</code>  · <code>border-bottom: --line-2</code> · padding-x <code>24</code></span></div>
+      <div class="li"><span class="num">2</span><span class="t"><strong>StatusBadge · idle</strong>Shows before any source is connected. Dot is non-pulsing <code>--ink-2</code>. Text "Idle" uppercase mono 11px.</span></div>
+      <div class="li"><span class="num">3</span><span class="t"><strong>Display L · hero title</strong>Space Grotesk 48/500, line-height 1.1, letter-spacing −0.02em. Color <code>--ink-0</code>.</span></div>
+      <div class="li"><span class="num">4</span><span class="t"><strong>3-step guide · 20px gap</strong>Cards <code>--bg-2</code> · border <code>--line-2</code> · radius <code>--r-lg</code> (8) · padding 24. Step 01 eyebrow is <code>--cyan</code>, others <code>--ink-3</code>.</span></div>
+      <div class="li"><span class="num">5</span><span class="t"><strong>Primary CTA · Webcam</strong><code>--cyan</code> bg · ink <code>#051F1E</code>. Hover: <code>--cyan-d</code>. Focus: <code>--shadow-focus</code>. Label "Use webcam" 16px display.</span></div>
+      <div class="li"><span class="num">6</span><span class="t"><strong>Secondary CTA · Upload</strong>Same dimensions as primary. Triggers hidden <code>&lt;input type="file"&gt;</code>. Accept <code>video/mp4,video/quicktime</code>.</span></div>
+    </div>
+  </div>
+
+  <div class="sub-h-eyebrow" style="margin-top: 32px;">3.1.1 · Empty state · variants</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Same layout, modified CTAs</div>
+
+  <div class="state-grid">
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--ink-2);border-radius:50%"></span>Default · idle</span></div>
+      <div class="bd"><div style="text-align:center"><div style="font-family:var(--f-display);font-size:18px;color:var(--ink-0);margin-bottom:6px">Connect a source</div><div style="font-size:12px;color:var(--ink-2);margin-bottom:16px">Webcam or upload</div><button class="btn primary" style="font-size:12px;padding:6px 12px">Use webcam</button></div></div>
+      <div class="ft">triggers <code>getUserMedia</code></div>
+    </div>
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--amber);border-radius:50%"></span>Camera denied</span></div>
+      <div class="bd"><div style="text-align:center"><div style="font-family:var(--f-display);font-size:16px;color:var(--amber);margin-bottom:6px">Camera access denied</div><div style="font-size:12px;color:var(--ink-2);margin-bottom:14px">Enable in browser settings or upload instead.</div><button class="btn" style="font-size:12px;padding:6px 12px">Upload video</button></div></div>
+      <div class="ft">show when <code>getUserMedia</code> rejects</div>
+    </div>
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--violet);border-radius:50%"></span>Upload in progress</span></div>
+      <div class="bd"><div style="text-align:center"><div style="font-family:var(--f-display);font-size:16px;color:var(--ink-0);margin-bottom:10px">Uploading clip_001.mp4</div><div style="width:100%;height:4px;background:var(--bg-3);border-radius:99px;overflow:hidden;margin-bottom:6px"><div style="width:65%;height:100%;background:var(--cyan)"></div></div><div style="font-family:var(--f-mono);font-size:10px;color:var(--ink-3)">65% · 12.4 MB / 18.9 MB</div></div></div>
+      <div class="ft"><code>POST /upload</code> progress event</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3.2 LIVE MONITORING — DEFAULT (polygon closed, monitoring) ═══ -->
+<div class="sub-h-eyebrow" style="margin-top: 48px;">3.2 · Live Monitoring · default</div>
+<div class="sub-h"><span class="kicker-dot"></span> Hero screen · 70/30 split · polygon closed, detections firing</div>
+
+<div class="figure">
+  <div class="screen">
+    <div class="chrome">
+      <div class="dots"><span></span><span></span><span></span></div>
+      <div class="urlbar">neurawatch.app/monitor</div>
+    </div>
+    <div class="vp" style="min-height: 820px; padding: 0;">
+      <!-- app header -->
+      <div class="app-header" style="position: relative;">
+        <div class="left">
+          <div class="logo"></div>
+          <div class="name">NeuraWatch</div>
+        </div>
+        <div class="center">
+          <span class="status-badge live"><span class="dot"></span>Live</span>
+          <span class="fps-readout"><span class="label">FPS</span><span class="val">26.4</span></span>
+          <span style="font-family: var(--f-mono); font-size: 11px; color: var(--ink-3); padding: 5px 10px; border-left: 1px solid var(--line-2);">Webcam</span>
+        </div>
+        <div class="right">
+          <button class="btn danger">Reset Demo</button>
+        </div>
+      </div>
+
+      <!-- main 70/30 -->
+      <div style="display: grid; grid-template-columns: 1fr 360px; min-height: 700px;">
+        <!-- feed column -->
+        <div style="padding: 20px; display: flex; flex-direction: column; gap: 16px; position: relative;">
+          <div class="feed-panel" style="flex: 1;">
+            <div class="feed-bg"></div>
+            <div class="feed-placeholder-label">[ live webcam · 640 × 480 ]</div>
+
+            <!-- polygon overlay -->
+            <svg class="poly-svg" viewBox="0 0 640 480" preserveAspectRatio="none">
+              <polygon points="220,120 480,140 500,380 190,360" fill="rgba(24,225,217,0.06)" stroke="#18E1D9" stroke-width="2" stroke-linejoin="round" />
+              <circle cx="220" cy="120" r="4" fill="#18E1D9" />
+              <circle cx="480" cy="140" r="4" fill="#18E1D9" />
+              <circle cx="500" cy="380" r="4" fill="#18E1D9" />
+              <circle cx="190" cy="360" r="4" fill="#18E1D9" />
+            </svg>
+
+            <!-- bboxes -->
+            <div class="bbox" style="top: 34%; left: 22%; width: 11%; height: 38%;">
+              <span class="label">person · #4712 · 0.94</span>
+            </div>
+            <div class="bbox inzone" style="top: 40%; left: 46%; width: 14%; height: 42%;">
+              <span class="label">person · #4718 · IN · 0.91</span>
+            </div>
+            <div class="bbox" style="top: 52%; left: 76%; width: 18%; height: 22%;">
+              <span class="label">vehicle · #4701 · 0.88</span>
+            </div>
+
+            <!-- floating badges -->
+            <div class="feed-badge cyan" style="top: 14px; left: 14px;">
+              <span class="l">Source</span><span class="v">Webcam</span>
+            </div>
+            <div class="feed-badge" style="top: 14px; left: 142px;">
+              <span class="l">Model</span><span style="color: var(--green); display:inline-flex; align-items:center; gap: 5px;"><span style="width:5px;height:5px;background:var(--green);border-radius:50%"></span>YOLOv8n</span>
+            </div>
+            <div class="feed-badge cyan" style="top: 14px; right: 14px;">
+              <span class="l">FPS</span><span class="v">26.4</span>
+            </div>
+
+            <!-- pins -->
+            <div class="pin" style="top: 14%; left: 6%;">1</div>
+            <div class="pin" style="top: 6%; right: 7%;">2</div>
+            <div class="pin alt" style="top: 30%; left: 30%;">3</div>
+            <div class="pin alt" style="top: 44%; left: 51%;">4</div>
+          </div>
+
+          <!-- control strip -->
+          <div style="background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; position: relative;">
+            <div style="display:flex; gap: 6px; align-items: center;">
+              <span style="font-family:var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-right: 4px;">Source</span>
+              <div style="display:flex; gap: 4px; padding: 3px; background: var(--bg-3); border-radius: 6px; border: 1px solid var(--line);">
+                <span style="padding: 5px 12px; background: var(--bg-1); color: var(--cyan); font-size: 12px; border-radius: 4px; font-weight: 500;">Webcam</span>
+                <span style="padding: 5px 12px; color: var(--ink-3); font-size: 12px;">Upload</span>
+              </div>
+            </div>
+            <div style="display:flex; gap: 8px; align-items:center;">
+              <span style="font-family:var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Monitoring</span>
+              <button class="btn">Pause</button>
+              <button class="btn ghost">Stop</button>
+            </div>
+            <div style="display:flex; gap: 8px; align-items:center;">
+              <span style="font-family:var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Zone</span>
+              <button class="btn">Redraw</button>
+              <button class="btn ghost">Clear</button>
+            </div>
+            <div class="pin" style="top: 50%; left: 16%;">5</div>
+            <div class="pin" style="top: 50%; left: 52%;">6</div>
+            <div class="pin" style="top: 50%; right: 13%;">7</div>
+          </div>
+        </div>
+
+        <!-- alerts panel -->
+        <div class="alerts-panel" style="position: relative;">
+          <div class="alerts-head">
+            <h3>Alerts</h3>
+            <span class="count">24 today · 3 new</span>
+          </div>
+          <div style="overflow-y: auto; flex: 1;">
+            <div class="alert-row new">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip enter">● enter</span><span class="class">person</span></div>
+                <div class="sub">id #4718 · cam</div>
+              </div>
+              <div class="alert-time">just now</div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip exit">● exit</span><span class="class">vehicle</span></div>
+                <div class="sub">id #4701 · cam</div>
+              </div>
+              <div class="alert-time">12 s</div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip enter">● enter</span><span class="class">bicycle</span></div>
+                <div class="sub">id #4694 · cam</div>
+              </div>
+              <div class="alert-time">41 s</div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip exit">● exit</span><span class="class">person</span></div>
+                <div class="sub">id #4688 · cam</div>
+              </div>
+              <div class="alert-time">1 m</div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip enter">● enter</span><span class="class">person</span></div>
+                <div class="sub">id #4672 · cam</div>
+              </div>
+              <div class="alert-time">2 m</div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip exit">● exit</span><span class="class">vehicle</span></div>
+                <div class="sub">id #4665 · cam</div>
+              </div>
+              <div class="alert-time">3 m</div>
+            </div>
+          </div>
+          <div class="pin" style="top: 6%; left: -14px;">8</div>
+          <div class="pin" style="top: 18%; left: -14px;">9</div>
+          <div class="pin" style="top: 18%; right: 16%;">10</div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-header">
+      <span>LiveMonitoring · default (zone closed, live)</span>
+      <span class="state-chip">route: /monitor</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="li"><span class="num">1</span><span class="t"><strong>Feed floating badges</strong>Pill w/ <code>rgba(10,15,20,.7)</code> bg + <code>backdrop-filter: blur(8)</code>. Positioned <code>top:14 / left:14</code> from the feed-panel origin, never the viewport.</span></div>
+    <div class="li"><span class="num">2</span><span class="t"><strong>FPS badge · top-right</strong>Cyan variant. Value refreshes at 500 ms tick, not per-frame — avoids layout thrash.</span></div>
+    <div class="li alt"><span class="num">3</span><span class="t"><strong>DetectionBox · default</strong>2 px solid <code>--cyan</code> · radius <code>--r-sm</code> (2). Label above: mono 10/600, ink <code>#051F1E</code> on cyan fill.</span></div>
+    <div class="li alt"><span class="num">4</span><span class="t"><strong>DetectionBox · in-zone</strong>Border switches to <code>--amber</code>, width 3 px. Label prefixes with <code>IN ·</code>. Anchor = bottom-center of bbox intersected with polygon.</span></div>
+    <div class="li"><span class="num">5</span><span class="t"><strong>VideoSourceSelector</strong>Segmented. Active chip bg <code>--bg-1</code>, text <code>--cyan</code>. Inactive text <code>--ink-3</code>. Switching source auto-clears polygon.</span></div>
+    <div class="li"><span class="num">6</span><span class="t"><strong>MonitoringControls</strong>When running: <code>Pause</code> + <code>Stop</code> visible. When idle: single <code>Start</code> (primary) replaces both.</span></div>
+    <div class="li"><span class="num">7</span><span class="t"><strong>PolygonToolbar</strong>After zone closed: <code>Redraw</code> + <code>Clear</code>. During drawing: <code>Close Zone</code> (primary, enabled at ≥3 pts) + <code>Cancel</code>.</span></div>
+    <div class="li"><span class="num">8</span><span class="t"><strong>AlertsPanel · width 360</strong>Fixed 360 px column at ≥1440. <code>border-left: --line-2</code>. Header 56 px tall: title + count.</span></div>
+    <div class="li"><span class="num">9</span><span class="t"><strong>AlertListItem · new</strong>Freshly-pushed row: bg <code>rgba(24,225,217,.06)</code> for 2 s then fades. Respects <code>prefers-reduced-motion</code>.</span></div>
+    <div class="li"><span class="num">10</span><span class="t"><strong>Relative time</strong>Mono 11 · <code>--ink-3</code>. Format: <code>just now</code> / <code>12 s</code> / <code>1 m</code> / <code>14:28:03</code> after 1 h. Absolute time on hover (<code>title</code> attr).</span></div>
+  </div>
+</div>
+
+<!-- ═══ 3.3 LIVE MONITORING — DRAWING POLYGON ═══ -->
+<div class="sub-h-eyebrow" style="margin-top: 48px;">3.3 · Live Monitoring · drawing polygon</div>
+<div class="sub-h"><span class="kicker-dot"></span> PolygonEditor active · 3 vertices placed, rubber-band preview to cursor</div>
+
+<div class="figure">
+  <div class="screen">
+    <div class="vp" style="min-height: 620px; padding: 0;">
+      <!-- app header -->
+      <div class="app-header">
+        <div class="left"><div class="logo"></div><div class="name">NeuraWatch</div></div>
+        <div class="center">
+          <span class="status-badge processing"><span class="dot"></span>Drawing zone</span>
+          <span class="fps-readout"><span class="label">FPS</span><span class="val">26.1</span></span>
+        </div>
+        <div class="right"><button class="btn danger">Reset Demo</button></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 360px; min-height: 540px;">
+        <div style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+          <div class="feed-panel" style="flex: 1; cursor: crosshair; position: relative;">
+            <div class="feed-bg"></div>
+            <div class="feed-placeholder-label">[ live · polygon editing ]</div>
+
+            <!-- ghost grid -->
+            <svg class="poly-svg" viewBox="0 0 640 480" preserveAspectRatio="none" style="opacity:0.25">
+              <defs>
+                <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+                  <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#18E1D9" stroke-width="0.4"/>
+                </pattern>
+              </defs>
+              <rect width="640" height="480" fill="url(#grid)" />
+            </svg>
+
+            <!-- in-progress polygon -->
+            <svg class="poly-svg" viewBox="0 0 640 480" preserveAspectRatio="none">
+              <!-- placed edges -->
+              <line x1="200" y1="130" x2="470" y2="145" stroke="#18E1D9" stroke-width="2" />
+              <line x1="470" y1="145" x2="500" y2="360" stroke="#18E1D9" stroke-width="2" />
+              <!-- rubber-band preview to cursor -->
+              <line x1="500" y1="360" x2="300" y2="340" stroke="#18E1D9" stroke-width="1.5" stroke-dasharray="6 4" />
+              <!-- vertices -->
+              <circle cx="200" cy="130" r="5" fill="#18E1D9" stroke="#0F1620" stroke-width="2" />
+              <circle cx="470" cy="145" r="5" fill="#18E1D9" stroke="#0F1620" stroke-width="2" />
+              <circle cx="500" cy="360" r="5" fill="#18E1D9" stroke="#0F1620" stroke-width="2" />
+              <!-- cursor preview -->
+              <circle cx="300" cy="340" r="6" fill="none" stroke="#18E1D9" stroke-width="1.5" stroke-dasharray="2 2" />
+            </svg>
+
+            <!-- detections continue -->
+            <div class="bbox" style="top: 32%; left: 16%; width: 10%; height: 36%;">
+              <span class="label">person · #4721</span>
+            </div>
+
+            <div class="feed-badge cyan" style="top: 14px; left: 14px;">
+              <span class="l">Mode</span><span style="color: var(--cyan);" class="v">Drawing</span>
+            </div>
+            <div class="feed-badge" style="top: 14px; right: 14px;">
+              <span class="l">Vertices</span><span style="color: var(--ink-0);" class="v">3 / ≥3</span>
+            </div>
+
+            <!-- instructional hint -->
+            <div style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(10,15,20,0.8); backdrop-filter: blur(8px); padding: 10px 16px; border-radius: 6px; border: 1px solid var(--line-2); font-family: var(--f-mono); font-size: 12px; color: var(--ink-1); letter-spacing: 0.04em;">
+              Click to add vertex · <span style="color:var(--cyan)">Close Zone</span> when ready · <span style="color:var(--ink-3)">Esc to cancel</span>
+            </div>
+
+            <div class="pin" style="top: 6%; left: 6%;">1</div>
+            <div class="pin" style="top: 28%; left: 32%;">2</div>
+            <div class="pin" style="top: 72%; left: 48%;">3</div>
+            <div class="pin alt" style="bottom: 14%; left: 50%;">4</div>
+          </div>
+
+          <div style="background: var(--bg-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="display:flex; gap: 8px; align-items:center;">
+              <span style="font-family:var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Zone</span>
+              <button class="btn primary">Close Zone</button>
+              <button class="btn ghost">Cancel</button>
+              <span style="font-family:var(--f-mono); font-size: 11px; color: var(--ink-3); margin-left: 8px;">3 vertices · ready to close</span>
+            </div>
+            <div class="pin alt" style="top: 50%; left: 16%;">5</div>
+          </div>
+        </div>
+
+        <div class="alerts-panel">
+          <div class="alerts-head"><h3>Alerts</h3><span class="count">24 today</span></div>
+          <div style="padding: 24px 20px; text-align: center; color: var(--ink-3); font-size: 13px;">Zone editing · detection overlay continues but enter/exit events pause until the zone is closed.</div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-header">
+      <span>LiveMonitoring · drawing polygon</span>
+      <span class="state-chip">mode: zone-draw</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="li"><span class="num">1</span><span class="t"><strong>Mode badge · Drawing</strong>Replaces Source badge during edit. Mode label <code>--cyan</code>. Cursor is <code>crosshair</code> over feed-panel only.</span></div>
+    <div class="li"><span class="num">2</span><span class="t"><strong>Vertex · placed</strong>5 px filled cyan with 2 px <code>--bg-1</code> stroke ring (reads against any video bg). Click on canvas appends to <code>points[]</code>.</span></div>
+    <div class="li"><span class="num">3</span><span class="t"><strong>Rubber-band line</strong>Dashed <code>6 4</code>, stroke-width 1.5, color <code>--cyan</code>. Follows cursor via <code>mousemove</code>. Hidden when cursor leaves feed.</span></div>
+    <div class="li alt"><span class="num">4</span><span class="t"><strong>Inline hint · bottom center</strong>Mono 12 on <code>rgba(10,15,20,.8)</code>. Copy: "Click to add vertex · Close Zone when ready · Esc to cancel".</span></div>
+    <div class="li alt"><span class="num">5</span><span class="t"><strong>Close Zone button · primary</strong>Disabled until <code>points.length &gt;= 3</code>. On click: appends first point, emits <code>zone_update</code> with bumped <code>zone_version</code>.</span></div>
+  </div>
+</div>
+
+<!-- ═══ 3.4 LIVE MONITORING — ALERT FIRING ═══ -->
+<div class="sub-h-eyebrow" style="margin-top: 48px;">3.4 · Live Monitoring · alert firing</div>
+<div class="sub-h"><span class="kicker-dot"></span> Enter event just fired · in-zone bbox amber · new row tinted · feed edge pulse</div>
+
+<div class="figure">
+  <div class="screen">
+    <div class="vp" style="min-height: 620px; padding: 0;">
+      <div class="app-header">
+        <div class="left"><div class="logo"></div><div class="name">NeuraWatch</div></div>
+        <div class="center">
+          <span class="status-badge live"><span class="dot"></span>Live</span>
+          <span class="fps-readout"><span class="label">FPS</span><span class="val">25.8</span></span>
+          <span class="fps-readout"><span class="label">Alerts</span><span class="val" style="color: var(--amber);">+1</span></span>
+        </div>
+        <div class="right"><button class="btn danger">Reset Demo</button></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 360px; min-height: 540px;">
+        <div style="padding: 20px;">
+          <div class="feed-panel" style="height: 100%; box-shadow: inset 0 0 0 2px rgba(245,165,36,0.5);">
+            <div class="feed-bg"></div>
+            <div class="feed-placeholder-label">[ live · alert fired ]</div>
+
+            <svg class="poly-svg" viewBox="0 0 640 480" preserveAspectRatio="none">
+              <polygon points="220,120 480,140 500,380 190,360" fill="rgba(245,165,36,0.08)" stroke="#F5A524" stroke-width="2" />
+              <circle cx="220" cy="120" r="4" fill="#F5A524" />
+              <circle cx="480" cy="140" r="4" fill="#F5A524" />
+              <circle cx="500" cy="380" r="4" fill="#F5A524" />
+              <circle cx="190" cy="360" r="4" fill="#F5A524" />
+            </svg>
+
+            <div class="bbox inzone" style="top: 40%; left: 46%; width: 14%; height: 42%; border-width: 3px; box-shadow: 0 0 16px rgba(245,165,36,0.5);">
+              <span class="label" style="background:#F5A524;color:#1A0C00;">person · #4732 · IN · 0.93</span>
+            </div>
+            <div class="bbox" style="top: 52%; left: 76%; width: 18%; height: 22%;">
+              <span class="label">vehicle · #4701</span>
+            </div>
+
+            <div class="feed-badge cyan" style="top: 14px; left: 14px;"><span class="l">Source</span><span class="v">Webcam</span></div>
+            <div class="feed-badge cyan" style="top: 14px; right: 14px;"><span class="l">FPS</span><span class="v">25.8</span></div>
+
+            <div class="pin warn" style="top: 18%; left: 8%;">1</div>
+            <div class="pin alt" style="top: 44%; left: 51%;">2</div>
+          </div>
+        </div>
+
+        <div class="alerts-panel">
+          <div class="alerts-head"><h3>Alerts</h3><span class="count">25 today · <span style="color:var(--cyan)">1 new</span></span></div>
+          <div>
+            <div class="alert-row new" style="animation: none; position: relative;">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip enter">● enter</span><span class="class">person</span></div>
+                <div class="sub">id #4732 · cam · 0.93</div>
+              </div>
+              <div class="alert-time" style="color: var(--cyan);">0 s</div>
+              <div class="pin" style="top: -10px; right: -12px;">3</div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip enter">● enter</span><span class="class">person</span></div>
+                <div class="sub">id #4718 · cam</div>
+              </div>
+              <div class="alert-time">2 m</div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-thumb"></div>
+              <div class="alert-meta">
+                <div class="type-row"><span class="chip exit">● exit</span><span class="class">vehicle</span></div>
+                <div class="sub">id #4701 · cam</div>
+              </div>
+              <div class="alert-time">2 m</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-header">
+      <span>LiveMonitoring · alert firing</span>
+      <span class="state-chip">event: enter</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="li warn"><span class="num">1</span><span class="t"><strong>Feed edge pulse</strong>200 ms amber inset ring on the feed-panel when an event fires. <code>box-shadow: inset 0 0 0 2px rgba(245,165,36,.5)</code> → fade to transparent.</span></div>
+    <div class="li alt"><span class="num">2</span><span class="t"><strong>In-zone bbox · emphasized</strong>Border 3 px amber + outer glow <code>0 0 16px rgba(245,165,36,.5)</code> during the 200 ms event window. Reverts to 3 px flat after.</span></div>
+    <div class="li"><span class="num">3</span><span class="t"><strong>New row · tinted for 2 s</strong>Bg <code>rgba(24,225,217,.06)</code>, time stamp colored <code>--cyan</code>. Tint fades linearly over 2 s (token <code>--d-slow</code>).</span></div>
+  </div>
+</div>
+
+<!-- ═══ 3.5 ALERT DETAIL DRAWER ═══ -->
+<div class="sub-h-eyebrow" style="margin-top: 48px;">3.5 · Alert Detail · side drawer</div>
+<div class="sub-h"><span class="kicker-dot"></span> Opens over alerts panel · live feed stays visible · 440 px wide</div>
+
+<div class="figure">
+  <div class="screen">
+    <div class="vp" style="min-height: 700px; padding: 0;">
+      <div class="app-header">
+        <div class="left"><div class="logo"></div><div class="name">NeuraWatch</div></div>
+        <div class="center"><span class="status-badge live"><span class="dot"></span>Live</span><span class="fps-readout"><span class="label">FPS</span><span class="val">26.4</span></span></div>
+        <div class="right"><button class="btn danger">Reset Demo</button></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 360px; min-height: 620px; position: relative;">
+        <div style="padding: 20px;">
+          <div class="feed-panel" style="height: 100%;">
+            <div class="feed-bg"></div>
+            <div class="feed-placeholder-label">[ live feed continues ]</div>
+            <svg class="poly-svg" viewBox="0 0 640 480" preserveAspectRatio="none">
+              <polygon points="220,120 480,140 500,380 190,360" fill="rgba(24,225,217,0.06)" stroke="#18E1D9" stroke-width="2"/>
+            </svg>
+            <div class="bbox" style="top: 34%; left: 22%; width: 11%; height: 38%;"><span class="label">person · #4712</span></div>
+            <div class="feed-badge cyan" style="top: 14px; left: 14px;"><span class="l">Source</span><span class="v">Webcam</span></div>
+            <div class="feed-badge cyan" style="top: 14px; right: 14px;"><span class="l">FPS</span><span class="v">26.4</span></div>
+          </div>
+        </div>
+
+        <!-- drawer overlays the alerts panel -->
+        <div style="position: relative;">
+          <div class="alerts-panel" style="opacity: 0.3;">
+            <div class="alerts-head"><h3>Alerts</h3><span class="count">24 today</span></div>
+            <div>
+              <div class="alert-row selected"><div class="alert-thumb"></div><div class="alert-meta"><div class="type-row"><span class="chip enter">● enter</span><span class="class">person</span></div><div class="sub">id #4718</div></div><div class="alert-time">2 m</div></div>
+            </div>
+          </div>
+          <!-- drawer -->
+          <div style="position: absolute; top: 0; right: 0; bottom: 0; width: 440px; background: var(--bg-3); border-left: 1px solid var(--line-2); box-shadow: -12px 0 32px rgba(0,0,0,0.5); display: flex; flex-direction: column;">
+            <!-- drawer header -->
+            <div style="padding: 18px 24px; border-bottom: 1px solid var(--line-2); display: flex; align-items: center; justify-content: space-between;">
+              <div>
+                <div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">Alert detail</div>
+                <div style="font-family: var(--f-display); font-size: 17px; font-weight: 500; color: var(--ink-0);">Event #4718 · enter</div>
+              </div>
+              <button class="btn ghost" aria-label="Close detail" style="padding: 6px 10px;">✕</button>
+            </div>
+
+            <div style="padding: 20px 24px; overflow-y: auto; flex: 1;">
+              <!-- frame -->
+              <div style="background: #050A0E; border-radius: 8px; aspect-ratio: 4/3; position: relative; overflow: hidden; border: 1px solid var(--line-2); margin-bottom: 20px;">
+                <div style="position:absolute; inset: 0; background:
+                    linear-gradient(135deg, rgba(24,225,217,0.06), transparent),
+                    repeating-linear-gradient(45deg, #0B1318 0px, #0B1318 10px, #0C1519 10px, #0C1519 20px);"></div>
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(255,255,255,0.15);">[ saved frame ]</div>
+                <!-- bbox on saved frame -->
+                <div style="position: absolute; top: 30%; left: 40%; width: 22%; height: 48%; border: 2px solid var(--amber); border-radius: 2px;">
+                  <span style="position: absolute; top: -20px; left: -2px; padding: 2px 6px; background: var(--amber); color: #1A0C00; font-family: var(--f-mono); font-size: 10px; font-weight: 600;">person · IN</span>
+                </div>
+                <div style="position: absolute; bottom: 10px; left: 10px; font-family: var(--f-mono); font-size: 10px; color: var(--ink-2); background: rgba(0,0,0,0.5); padding: 3px 6px; border-radius: 3px;">640 × 480 · frame #18,234</div>
+              </div>
+              <div class="pin" style="top: 80px; right: 12px;">1</div>
+
+              <!-- meta -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; margin-bottom: 20px;">
+                <div style="padding: 12px 14px; background: var(--bg-1);"><div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Event</div><div style="font-family: var(--f-display); font-size: 15px; color: var(--violet); margin-top: 3px;">● enter</div></div>
+                <div style="padding: 12px 14px; background: var(--bg-1);"><div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Class</div><div style="font-family: var(--f-display); font-size: 15px; color: var(--ink-0); margin-top: 3px;">person</div></div>
+                <div style="padding: 12px 14px; background: var(--bg-1);"><div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Track ID</div><div style="font-family: var(--f-mono); font-size: 14px; color: var(--ink-0); margin-top: 3px;">#4718</div></div>
+                <div style="padding: 12px 14px; background: var(--bg-1);"><div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Confidence</div><div style="font-family: var(--f-mono); font-size: 14px; color: var(--ink-0); margin-top: 3px;">0.91</div></div>
+                <div style="padding: 12px 14px; background: var(--bg-1); grid-column: span 2;"><div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Timestamp</div><div style="font-family: var(--f-mono); font-size: 13px; color: var(--ink-0); margin-top: 3px;">2026-04-24 · 14:28:03.412 UTC</div></div>
+                <div style="padding: 12px 14px; background: var(--bg-1); grid-column: span 2;"><div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3);">Source</div><div style="font-family: var(--f-body); font-size: 13px; color: var(--ink-1); margin-top: 3px;">Webcam · 640 × 480 · YOLOv8n + ByteTrack</div></div>
+              </div>
+              <div class="pin" style="top: 370px; right: 12px;">2</div>
+
+              <!-- actions -->
+              <div style="display: flex; gap: 8px;">
+                <button class="btn" style="flex: 1;">Download frame</button>
+                <button class="btn ghost" style="flex: 1;">Copy event JSON</button>
+              </div>
+              <div class="pin" style="top: 560px; right: 12px;">3</div>
+            </div>
+
+            <div class="pin" style="top: 24px; left: -12px;">4</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen-header">
+      <span>AlertDetailDrawer · open</span>
+      <span class="state-chip">width: 440px</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="li"><span class="num">1</span><span class="t"><strong>Saved frame · 4:3 aspect</strong>JPEG q=0.6 from <code>/frames/{filename}</code>. Full bbox re-drawn in amber on the still. Frame # + dims in corner.</span></div>
+    <div class="li"><span class="num">2</span><span class="t"><strong>Metadata grid · 2×3</strong>Event · Class · Track ID · Confidence · Timestamp (span 2) · Source (span 2). All mono for data, display for labels.</span></div>
+    <div class="li"><span class="num">3</span><span class="t"><strong>Actions</strong>Download frame = direct blob from <code>/frames/</code>. Copy JSON = <code>navigator.clipboard.writeText</code> of full event payload.</span></div>
+    <div class="li"><span class="num">4</span><span class="t"><strong>Drawer entrance</strong>Slides in from right over alerts panel. <code>transform: translateX(100%) → 0</code> @ 200 ms ease-out. Alerts list behind dims to 30% opacity. Esc closes. Focus trapped.</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     §4 · SYSTEM STATES
+  ═══════════════════════════════════════════════════════ -->
+</section>
+
+<section class="sec" id="states">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">§4 · System States</div>
+      <h2>System states</h2>
+    </div>
+    <div class="tagline">7 states ship in MVP. Every state has a designed treatment, a trigger, and a recovery path. Color never does the work alone — text, icon, and position always carry the message.</div>
+  </div>
+
+  <div class="state-grid" style="grid-template-columns: repeat(3, 1fr);">
+
+    <!-- 1 idle -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--ink-2);border-radius:50%"></span>01 · idle</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--ink-3)">initial</code></div>
+      <div class="bd"><div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start"><span class="status-badge idle"><span class="dot"></span>Idle</span><div style="font-size:12px;color:var(--ink-2);line-height:1.5">Before any source is connected. Controls strip hidden. Empty state hero visible.</div></div></div>
+      <div class="ft">trigger: app boot · FE state <code>mode === 'idle'</code></div>
+    </div>
+
+    <!-- 2 model-loading -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--ink-1);border-radius:50%"></span>02 · model loading</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--ink-3)">~3 s</code></div>
+      <div class="bd"><div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start"><span class="status-badge loading"><span class="dot"></span>Loading model</span><div style="font-size:12px;color:var(--ink-2);line-height:1.5">YOLO weights initializing. Start control disabled, inline hint below feed.</div></div></div>
+      <div class="ft">trigger: WS open, first <code>stats</code> not yet received</div>
+    </div>
+
+    <!-- 3 live -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--cyan);border-radius:50%"></span>03 · live</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--cyan)">steady</code></div>
+      <div class="bd"><div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start"><span class="status-badge live"><span class="dot"></span>Live</span><div style="font-size:12px;color:var(--ink-2);line-height:1.5">Actively processing frames. FPS readout updates. Full controls available.</div></div></div>
+      <div class="ft">trigger: first <code>detection_result</code> · FPS &gt; 0</div>
+    </div>
+
+    <!-- 4 processing (upload) -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--violet);border-radius:50%"></span>04 · processing</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--ink-3)">upload mode</code></div>
+      <div class="bd"><div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start"><span class="status-badge processing"><span class="dot"></span>Processing</span><div style="width:100%;height:3px;background:var(--bg-3);border-radius:99px;overflow:hidden"><div style="width:42%;height:100%;background:var(--violet)"></div></div><div style="font-family:var(--f-mono);font-size:10px;color:var(--ink-3)">frame 7,612 / 18,134</div></div></div>
+      <div class="ft">trigger: upload mode active · until <code>processing_complete</code></div>
+    </div>
+
+    <!-- 5 disconnected -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--amber);border-radius:50%"></span>05 · disconnected</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--amber)">recoverable</code></div>
+      <div class="bd"><div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start"><span class="status-badge disc"><span class="dot"></span>Disconnected</span><div style="font-size:12px;color:var(--ink-2);line-height:1.5">WebSocket dropped. 1 retry attempt. Feed pauses last frame. Banner: "Reconnecting…"</div></div></div>
+      <div class="ft">trigger: WS <code>close</code> · 2 s watchdog timeout</div>
+    </div>
+
+    <!-- 6 camera denied -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--red);border-radius:50%"></span>06 · camera denied</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--red)">blocking</code></div>
+      <div class="bd"><div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start"><span class="status-badge error"><span class="dot"></span>Camera denied</span><div style="font-size:12px;color:var(--ink-2);line-height:1.5">Browser rejected <code style="font-family:var(--f-mono);color:var(--cyan)">getUserMedia</code>. Show recovery CTA to upload instead.</div></div></div>
+      <div class="ft">trigger: <code>NotAllowedError</code> on permission prompt</div>
+    </div>
+
+    <!-- 7 no polygon -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--cyan);border-radius:50%"></span>07 · no polygon</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--ink-3)">sub-state</code></div>
+      <div class="bd"><div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start"><span class="status-badge live"><span class="dot"></span>Live</span><div style="padding:6px 10px;background:rgba(24,225,217,0.06);border:1px solid rgba(24,225,217,0.25);border-radius:4px;font-size:11px;color:var(--cyan);font-family:var(--f-mono);letter-spacing:0.04em">⚑ Draw a zone to enable alerts</div></div></div>
+      <div class="ft">detections run · alerts paused · <code>zone_version === 0</code></div>
+    </div>
+
+    <!-- 8 no alerts -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--ink-2);border-radius:50%"></span>08 · no alerts yet</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--ink-3)">empty list</code></div>
+      <div class="bd"><div style="width:100%;text-align:center;color:var(--ink-3)"><div style="width:48px;height:48px;margin:0 auto 12px;border:1px dashed var(--line-3);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:18px;color:var(--ink-3)">0</div><div style="font-family:var(--f-display);font-size:14px;color:var(--ink-1);margin-bottom:4px">No alerts yet</div><div style="font-size:11px;color:var(--ink-3);line-height:1.5">Objects entering or exiting the zone will appear here.</div></div></div>
+      <div class="ft">AlertsPanel when <code>alerts.length === 0</code></div>
+    </div>
+
+    <!-- 9 error -->
+    <div class="state-card">
+      <div class="hd"><span class="hd-l"><span style="width:6px;height:6px;background:var(--red);border-radius:50%"></span>09 · error</span><code style="font-family:var(--f-mono);font-size:10px;color:var(--red)">fatal</code></div>
+      <div class="bd"><div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start"><span class="status-badge error"><span class="dot"></span>Error</span><div style="font-size:12px;color:var(--ink-2);line-height:1.5">Unrecoverable — model crash or server down. CTA: <code style="font-family:var(--f-mono);color:var(--cyan)">Reset Demo</code> then retry.</div></div></div>
+      <div class="ft">trigger: WS 1011 or server <code>/health</code> fail</div>
+    </div>
+  </div>
+
+  <div class="sub-h-eyebrow" style="margin-top: 24px;">4.1 · State transition contract</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Reducer actions (single <code>useReducer</code> in App.tsx)</div>
+
+  <div class="code"><span class="c">// types/state.ts</span>
+<span class="k">export type</span> <span class="t">AppStatus</span> =
+  | <span class="s">'idle'</span> | <span class="s">'model-loading'</span> | <span class="s">'live'</span> | <span class="s">'processing'</span>
+  | <span class="s">'disconnected'</span> | <span class="s">'camera-denied'</span> | <span class="s">'error'</span>;
+
+<span class="k">export type</span> <span class="t">Action</span> =
+  | { type: <span class="s">'ws/open'</span> }
+  | { type: <span class="s">'ws/first-frame'</span> }                        <span class="c">// → live</span>
+  | { type: <span class="s">'ws/close'</span>; retry: <span class="t">boolean</span> }             <span class="c">// → disconnected | error</span>
+  | { type: <span class="s">'upload/start'</span>; videoId: <span class="t">string</span> }        <span class="c">// → processing</span>
+  | { type: <span class="s">'upload/complete'</span> }                        <span class="c">// → idle</span>
+  | { type: <span class="s">'media/denied'</span> }                           <span class="c">// → camera-denied</span>
+  | { type: <span class="s">'zone/update'</span>; points: <span class="t">Point[]</span>; version: <span class="t">number</span> }
+  | { type: <span class="s">'zone/clear'</span> }
+  | { type: <span class="s">'alert/new'</span>; alert: <span class="t">Alert</span> }
+  | { type: <span class="s">'session/reset'</span> };                         <span class="c">// → idle, clears alerts + zone</span></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     §5 · RESPONSIVE
+  ═══════════════════════════════════════════════════════ -->
+<section class="sec" id="responsive">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">§5 · Responsive Behavior</div>
+      <h2>Responsive</h2>
+    </div>
+    <div class="tagline">Desktop is primary. Breakpoints defined for known fallbacks. Mobile phones are out of scope — polygon precision isn't viable under ~640 px.</div>
+  </div>
+
+  <div style="background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 10px; padding: 8px 24px;">
+    <div class="bp-row">
+      <div class="bp-tag">desktop-xl <span class="px">≥ 1440 px</span></div>
+      <div class="bp-desc">
+        <strong style="color:var(--ink-0); font-family:var(--f-display); font-weight: 500;">Target layout · 70 / 30 split.</strong>
+        <ul>
+          <li>Feed column: <code>1fr</code>, min 900 px. Alerts column: fixed <code>360 px</code>.</li>
+          <li>App header: 64 px · padding-x 24.</li>
+          <li>Feed panel: 4:3 aspect, padding 20 around. Controls strip below.</li>
+          <li>Alert detail drawer: 440 px, overlays alerts column.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="bp-row">
+      <div class="bp-tag">desktop <span class="px">1200 – 1439 px</span></div>
+      <div class="bp-desc">
+        <strong style="color:var(--ink-0); font-family:var(--f-display); font-weight: 500;">Holds 70 / 30.</strong>
+        <ul>
+          <li>Alerts column shrinks to <code>320 px</code> min.</li>
+          <li>Feed-badge labels drop ("FPS 26.4" → "26.4" with mono label color cue).</li>
+          <li>Controls strip wraps to 2 rows if &lt; 1260 px.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="bp-row">
+      <div class="bp-tag">tablet <span class="px">900 – 1199 px</span></div>
+      <div class="bp-desc">
+        <strong style="color:var(--ink-0); font-family:var(--f-display); font-weight: 500;">Alerts collapse to drawer.</strong>
+        <ul>
+          <li>Feed takes full width. Alerts hidden behind a <code>Alerts · 24</code> button in the header.</li>
+          <li>Drawer opens from right at 360 px width. Esc or scrim-click dismisses.</li>
+          <li>New-alert tint still plays; badge on the toggle shows unread count.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="bp-row">
+      <div class="bp-tag">mobile/tablet-s <span class="px">640 – 899 px</span></div>
+      <div class="bp-desc">
+        <strong style="color:var(--ink-0); font-family:var(--f-display); font-weight: 500;">Stack vertically.</strong>
+        <ul>
+          <li>Order: header · feed · controls · alerts list (full-width).</li>
+          <li>Polygon draw still works with touch. Close Zone button enlarged to 44 px tap target.</li>
+          <li>Floating badges overflow hidden; status moves to header only.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="bp-row">
+      <div class="bp-tag" style="color:var(--ink-3)">out of scope <span class="px">&lt; 640 px</span></div>
+      <div class="bp-desc" style="color: var(--ink-3);">
+        <strong style="color:var(--ink-2); font-family:var(--f-display); font-weight: 500;">Block with an informational screen.</strong>
+        <ul>
+          <li>"NeuraWatch requires a viewport of at least 640 px. Please use a larger screen."</li>
+          <li>No partial UI — polygon precision isn't viable and the bbox-to-zone math depends on readable geometry.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="sub-h-eyebrow" style="margin-top: 32px;">5.1 · Visual comparison</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Three target widths</div>
+
+  <div style="display: grid; grid-template-columns: 2fr 1.3fr 0.9fr; gap: 16px; align-items: end;">
+    <div class="bp-mock" style="height: 260px;">
+      <!-- desktop -->
+      <div style="height: 24px; background: var(--bg-1); border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 10px; gap: 6px;">
+        <div style="width: 10px; height: 10px; background: var(--cyan); border-radius: 2px;"></div>
+        <div style="font-family: var(--f-mono); font-size: 8px; color: var(--ink-3); letter-spacing: 0.1em;">NEURAWATCH · LIVE</div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 100px; height: calc(100% - 24px);">
+        <div style="padding: 8px;"><div style="background: #050A0E; height: 100%; border-radius: 4px; position: relative; overflow: hidden;"><div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,#0B1318 0,#0B1318 4px,#0C1519 4px,#0C1519 8px)"></div><div style="position: absolute; top: 40%; left: 20%; width: 18%; height: 40%; border: 1.5px solid var(--cyan); border-radius: 2px;"></div><div style="position: absolute; top: 30%; left: 45%; width: 45%; height: 50%; border: 1px solid var(--cyan); border-radius: 2px; background: rgba(24,225,217,0.08);"></div></div></div>
+        <div style="background: var(--bg-1); border-left: 1px solid var(--line-2); padding: 8px 10px;">
+          <div style="font-family: var(--f-mono); font-size: 8px; color: var(--ink-3); margin-bottom: 6px;">ALERTS</div>
+          <div style="height: 22px; background: var(--bg-2); border-radius: 3px; margin-bottom: 4px;"></div>
+          <div style="height: 22px; background: var(--bg-2); border-radius: 3px; margin-bottom: 4px;"></div>
+          <div style="height: 22px; background: var(--bg-2); border-radius: 3px;"></div>
+        </div>
+      </div>
+      <div class="lbl">≥ 1440 px · target</div>
+    </div>
+    <div class="bp-mock" style="height: 260px;">
+      <!-- tablet -->
+      <div style="height: 24px; background: var(--bg-1); border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 10px; gap: 6px;">
+        <div style="width: 10px; height: 10px; background: var(--cyan); border-radius: 2px;"></div>
+        <div style="font-family: var(--f-mono); font-size: 8px; color: var(--ink-3); letter-spacing: 0.1em;">NEURA</div>
+        <div style="margin-left: auto; font-family: var(--f-mono); font-size: 8px; color: var(--cyan); padding: 2px 5px; border: 1px solid var(--cyan); border-radius: 2px;">ALERTS · 3</div>
+      </div>
+      <div style="padding: 8px; height: calc(100% - 24px);"><div style="background: #050A0E; height: 100%; border-radius: 4px; position: relative; overflow: hidden;"><div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,#0B1318 0,#0B1318 4px,#0C1519 4px,#0C1519 8px)"></div><div style="position: absolute; top: 30%; left: 15%; width: 70%; height: 55%; border: 1px solid var(--cyan); border-radius: 2px; background: rgba(24,225,217,0.08);"></div></div></div>
+      <div class="lbl">900 – 1199 px</div>
+    </div>
+    <div class="bp-mock" style="height: 260px;">
+      <!-- stacked -->
+      <div style="height: 22px; background: var(--bg-1); border-bottom: 1px solid var(--line); display: flex; align-items: center; padding: 0 8px;">
+        <div style="width: 8px; height: 8px; background: var(--cyan); border-radius: 1px;"></div>
+      </div>
+      <div style="padding: 6px; height: calc(100% - 22px); display: flex; flex-direction: column; gap: 5px;">
+        <div style="background: #050A0E; height: 70px; border-radius: 3px; position: relative; overflow: hidden;"><div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,#0B1318 0,#0B1318 4px,#0C1519 4px,#0C1519 8px)"></div><div style="position: absolute; top: 30%; left: 20%; width: 50%; height: 55%; border: 1px solid var(--cyan); border-radius: 2px;"></div></div>
+        <div style="height: 18px; background: var(--bg-2); border-radius: 3px;"></div>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+          <div style="height: 22px; background: var(--bg-2); border-radius: 3px;"></div>
+          <div style="height: 22px; background: var(--bg-2); border-radius: 3px;"></div>
+          <div style="height: 22px; background: var(--bg-2); border-radius: 3px;"></div>
+        </div>
+      </div>
+      <div class="lbl">640 – 899 px</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     §6 · WEBSOCKET PROTOCOL
+  ═══════════════════════════════════════════════════════ -->
+<section class="sec" id="ws">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">§6 · WebSocket Protocol</div>
+      <h2>Data contract</h2>
+    </div>
+    <div class="tagline">Single WS protocol for webcam + upload modes. Server drives cadence. Client uses an in-flight boolean with 2 s watchdog. Frames are binary JPEG; detections are JSON.</div>
+  </div>
+
+  <div class="sub-h-eyebrow">6.1 · Payload mapping</div>
+  <div class="sub-h"><span class="kicker-dot"></span> WS message → UI element</div>
+
+  <table class="spec-table">
+    <thead><tr><th>WS payload</th><th>→ UI element</th><th>Handler</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">detections[].bbox [x1,y1,x2,y2]</td><td><code>&lt;DetectionCanvas&gt;</code> box</td><td class="mono">drawBbox()</td><td>Normalized 0–1; denormalize to 640×480 processed frame, then scale to render size.</td></tr>
+      <tr><td class="mono">detections[].track_id</td><td>Label above bbox</td><td class="mono">drawLabel()</td><td>Prefix <code>#</code>, mono 10px, color matches bbox tint.</td></tr>
+      <tr><td class="mono">detections[].class</td><td>Label above bbox</td><td class="mono">drawLabel()</td><td>Always lowercased. Abbreviate <code>motorcycle</code> → <code>moto</code> if space-constrained.</td></tr>
+      <tr><td class="mono">detections[].confidence</td><td>Label suffix <code>· 0.94</code></td><td class="mono">drawLabel()</td><td>Shown only when bbox width &gt; 80 px. Hidden on small boxes to reduce clutter.</td></tr>
+      <tr><td class="mono">events[].event_type</td><td><code>&lt;AlertListItem&gt;</code> chip</td><td class="mono">pushAlert()</td><td><code>enter</code> → violet chip · <code>exit</code> → amber chip.</td></tr>
+      <tr><td class="mono">events[].alert_id</td><td>row <code>key</code> + dedup</td><td class="mono">pushAlert()</td><td>Dedup by id against existing list; REST fetch on mount uses same ids.</td></tr>
+      <tr><td class="mono">stats.fps</td><td>App header FPS readout</td><td class="mono">setFps()</td><td>Update every 500 ms tick (EMA) to avoid jitter.</td></tr>
+      <tr><td class="mono">stats.inference_ms</td><td>Dev-only tooltip on FPS</td><td class="mono">—</td><td>Hidden unless <code>?debug=1</code>.</td></tr>
+      <tr><td class="mono">zone_version</td><td>Polygon render version</td><td class="mono">reconcileZone()</td><td>FE only renders detections whose frame's <code>zone_version</code> matches current.</td></tr>
+      <tr><td class="mono">pts_ms (upload)</td><td><code>&lt;video&gt;.currentTime</code></td><td class="mono">seekVideo()</td><td>Pause <code>&lt;video&gt;</code>; step <code>currentTime = pts_ms / 1000</code>. Drop stale by seq + pts.</td></tr>
+      <tr><td class="mono">processing_complete</td><td>Status → idle · toast</td><td class="mono">onComplete()</td><td>Shows <code>&lt;SystemNotice&gt;</code>: "Processing complete · 142 alerts".</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-h-eyebrow" style="margin-top: 32px;">6.2 · Client flow-control</div>
+  <div class="sub-h"><span class="kicker-dot"></span> In-flight boolean + watchdog</div>
+
+  <div class="code"><span class="c">// services/wsClient.ts — single module-level singleton</span>
+<span class="k">let</span> inFlight = <span class="k">false</span>;
+<span class="k">let</span> lastSeq = <span class="s">0</span>;
+<span class="k">let</span> seq = <span class="s">0</span>;
+<span class="k">let</span> watchdog: ReturnType&lt;typeof setTimeout&gt;;
+
+<span class="k">function</span> <span class="t">sendFrame</span>(jpegBlob: <span class="t">Blob</span>) {
+  <span class="k">if</span> (inFlight) <span class="k">return</span>;                              <span class="c">// drop: server still has one</span>
+  inFlight = <span class="k">true</span>;
+  seq++;
+
+  ws.send(<span class="t">JSON</span>.stringify({ type: <span class="s">'frame_meta'</span>, seq }));
+  ws.send(jpegBlob);
+
+  <span class="k">clearTimeout</span>(watchdog);
+  watchdog = <span class="k">setTimeout</span>(() =&gt; {
+    inFlight = <span class="k">false</span>;                                     <span class="c">// 2 s safety net</span>
+    dispatch({ type: <span class="s">'ws/close'</span>, retry: <span class="k">true</span> });
+  }, <span class="s">2000</span>);
+}
+
+ws.onmessage = (e) =&gt; {
+  <span class="k">if</span> (<span class="k">typeof</span> e.data === <span class="s">'string'</span>) {
+    <span class="k">const</span> msg = <span class="t">JSON</span>.parse(e.data);
+    <span class="k">if</span> (msg.type === <span class="s">'detection_result'</span>) {
+      <span class="k">if</span> (msg.seq &lt;= lastSeq) <span class="k">return</span>;               <span class="c">// drop stale</span>
+      lastSeq = msg.seq;
+      inFlight = <span class="k">false</span>;
+      <span class="k">clearTimeout</span>(watchdog);
+      dispatch({ type: <span class="s">'ws/frame'</span>, payload: msg });
+    }
+  }
+};</div>
+
+  <div class="sub-h-eyebrow" style="margin-top: 24px;">6.3 · Coordinate conversion</div>
+  <div class="sub-h"><span class="kicker-dot"></span> 0–1 normalized ↔ canvas pixels</div>
+
+  <div class="code"><span class="c">// All bboxes + polygon points are normalized 0–1 against 640×480 processed frame.</span>
+<span class="c">// FE never stores pixel coords — always normalize on send, denormalize on render.</span>
+
+<span class="k">function</span> <span class="t">renderBbox</span>(bbox: [<span class="t">number</span>,<span class="t">number</span>,<span class="t">number</span>,<span class="t">number</span>], canvasW: <span class="t">number</span>, canvasH: <span class="t">number</span>) {
+  <span class="k">const</span> [x1, y1, x2, y2] = bbox;
+  ctx.strokeRect(
+    x1 * canvasW,
+    y1 * canvasH,
+    (x2 - x1) * canvasW,
+    (y2 - y1) * canvasH
+  );
+}
+
+<span class="k">function</span> <span class="t">capturePoint</span>(e: <span class="t">MouseEvent</span>, canvasEl: <span class="t">HTMLCanvasElement</span>): [<span class="t">number</span>,<span class="t">number</span>] {
+  <span class="k">const</span> r = canvasEl.getBoundingClientRect();
+  <span class="k">return</span> [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+}</div>
+
+  <div class="note">
+    <strong>Coordinate contract.</strong> If FE and BE disagree on coordinate space, alerts will fire in the wrong place — or never at all. <em>Single source of truth: 0–1 against 640×480.</em> Never store pixel coords in app state.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     §7 · ACCESSIBILITY
+  ═══════════════════════════════════════════════════════ -->
+<section class="sec" id="a11y">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">§7 · Accessibility</div>
+      <h2>Accessibility</h2>
+    </div>
+    <div class="tagline">WCAG AA minimum. Status never conveyed by color alone. All core controls keyboard-reachable with visible focus rings. No icon-only buttons in the monitoring path.</div>
+  </div>
+
+  <div class="sub-h-eyebrow">7.1 · Roles · aria · keyboard</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Per-component contracts</div>
+
+  <table class="spec-table">
+    <thead><tr><th>Component</th><th>Role</th><th>Key aria</th><th>Keyboard</th></tr></thead>
+    <tbody>
+      <tr><td><code>&lt;AppHeader&gt;</code></td><td class="mono">banner</td><td class="mono">—</td><td>Tab order: logo → status → FPS → source → reset</td></tr>
+      <tr><td><code>&lt;StatusBadge&gt;</code></td><td class="mono">status</td><td class="mono">aria-live="polite"</td><td>Read on change; state is in both icon + text</td></tr>
+      <tr><td><code>&lt;VideoSourceSelector&gt;</code></td><td class="mono">radiogroup</td><td class="mono">aria-label="Video source"</td><td>Arrow keys toggle; Enter/Space select</td></tr>
+      <tr><td><code>&lt;LiveFeedPanel&gt;</code></td><td class="mono">region</td><td class="mono">aria-label="Live feed"</td><td>Not interactive itself; children handle focus</td></tr>
+      <tr><td><code>&lt;DetectionCanvas&gt;</code></td><td class="mono">img</td><td class="mono">aria-label="Detections: 3 people, 1 vehicle"</td><td>Updated on every frame via debounced aria-label</td></tr>
+      <tr><td><code>&lt;PolygonEditor&gt;</code></td><td class="mono">application</td><td class="mono">aria-label="Zone editor"</td><td>Click = add point; Esc = cancel; Enter = close; Backspace = remove last</td></tr>
+      <tr><td><code>&lt;AlertsPanel&gt;</code></td><td class="mono">region</td><td class="mono">aria-labelledby="alerts-title" aria-live="polite"</td><td>New alert row announced; row list is standard tabbable</td></tr>
+      <tr><td><code>&lt;AlertListItem&gt;</code></td><td class="mono">button</td><td class="mono">aria-label="Enter event, person, id 4718, 2 minutes ago"</td><td>Enter/Space opens detail; Esc closes drawer</td></tr>
+      <tr><td><code>&lt;AlertDetailDrawer&gt;</code></td><td class="mono">dialog</td><td class="mono">aria-modal="true" aria-labelledby="drawer-title"</td><td>Focus-trap; Esc closes; focus returns to invoking row</td></tr>
+      <tr><td><code>&lt;SystemNotice&gt;</code></td><td class="mono">alert / status</td><td class="mono">aria-live="assertive" (errors) / "polite" (info)</td><td>Auto-dismisses in 4 s unless hovered/focused</td></tr>
+    </tbody>
+  </table>
+
+  <div class="sub-h-eyebrow" style="margin-top: 32px;">7.2 · Non-color signals</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Every status carries ≥2 of: text · icon · position · weight</div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+    <div style="background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 8px; padding: 16px;">
+      <div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 12px;">In-zone bbox</div>
+      <div style="display:flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+        <span class="chip" style="background: rgba(245,165,36,0.12); color: var(--amber); border-color: rgba(245,165,36,0.3);">IN</span>
+        <span style="font-family: var(--f-body); font-size: 12px; color: var(--ink-1);">prefix label</span>
+      </div>
+      <div style="font-size: 11px; color: var(--ink-3); line-height: 1.5;">Border color + border width (3 vs 2 px) + "IN" text prefix.</div>
+    </div>
+    <div style="background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 8px; padding: 16px;">
+      <div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 12px;">Status badges</div>
+      <div style="display:flex; flex-direction: column; gap: 6px;">
+        <span class="status-badge live" style="width: fit-content;"><span class="dot"></span>Live</span>
+        <span class="status-badge error" style="width: fit-content;"><span class="dot"></span>Error</span>
+      </div>
+      <div style="margin-top: 10px; font-size: 11px; color: var(--ink-3); line-height: 1.5;">Color + text label + dot shape + animation (pulse/static).</div>
+    </div>
+    <div style="background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 8px; padding: 16px;">
+      <div style="font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 12px;">Event chips</div>
+      <div style="display:flex; gap: 8px; margin-bottom: 8px;">
+        <span class="chip enter">● enter</span>
+        <span class="chip exit">● exit</span>
+      </div>
+      <div style="font-size: 11px; color: var(--ink-3); line-height: 1.5;">Color + text + chip position within row (always first).</div>
+    </div>
+  </div>
+
+  <div class="sub-h-eyebrow" style="margin-top: 32px;">7.3 · Focus ring contract</div>
+  <div class="sub-h"><span class="kicker-dot"></span> Visible ring on every interactive element</div>
+
+  <div class="code"><span class="c">/* global focus ring — never remove outlines without replacement */</span>
+<span class="t">button</span>:<span class="k">focus-visible</span>,
+<span class="t">[role="button"]</span>:<span class="k">focus-visible</span>,
+<span class="t">a</span>:<span class="k">focus-visible</span>,
+<span class="t">input</span>:<span class="k">focus-visible</span>,
+<span class="t">.alert-row</span>:<span class="k">focus-visible</span> {
+  <span class="a">outline</span>: <span class="s">2px solid var(--cyan)</span>;
+  <span class="a">outline-offset</span>: <span class="s">2px</span>;
+  <span class="a">border-radius</span>: <span class="s">4px</span>;
+}
+
+<span class="c">/* reduced motion */</span>
+<span class="k">@media</span> (<span class="a">prefers-reduced-motion</span>: reduce) {
+  <span class="t">.status-badge.live .dot</span> { <span class="a">animation</span>: <span class="s">none</span>; }
+  <span class="t">.alert-row.new</span> { <span class="a">animation</span>: <span class="s">none</span>; <span class="a">transition</span>: <span class="s">none</span>; }
+  <span class="t">*</span> { <span class="a">transition-duration</span>: <span class="s">0.01ms !important</span>; }
+}</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════
+     §8 · DELIVERY CHECKLIST
+  ═══════════════════════════════════════════════════════ -->
+<section class="sec">
+  <div class="sec-head">
+    <div>
+      <div class="sec-num">§8 · Delivery Checklist</div>
+      <h2>Ready for dev</h2>
+    </div>
+    <div class="tagline">Frontend team uses this list as the Definition of Done for the UI layer. Backend protocol + services are out of scope here (see PROJECT_PLAN.md).</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <div>
+      <div class="sub-h-eyebrow">Must ship</div>
+      <div class="sub-h"><span class="kicker-dot"></span> Before Friday demo</div>
+      <div style="background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 8px; padding: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; gap: 10px; align-items: start;"><span style="width: 16px; height: 16px; border: 1.5px solid var(--cyan); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-1); line-height: 1.5;">AppHeader with 6-state StatusBadge + FPS readout + Reset Demo (confirm dialog)</span></div>
+          <div style="display: flex; gap: 10px; align-items: start;"><span style="width: 16px; height: 16px; border: 1.5px solid var(--cyan); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-1); line-height: 1.5;">EmptyState with 3-step guide + webcam / upload selector</span></div>
+          <div style="display: flex; gap: 10px; align-items: start;"><span style="width: 16px; height: 16px; border: 1.5px solid var(--cyan); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-1); line-height: 1.5;">LiveFeedPanel (4:3 aspect) with rAF DetectionCanvas, bbox + label rendering, in-zone retint</span></div>
+          <div style="display: flex; gap: 10px; align-items: start;"><span style="width: 16px; height: 16px; border: 1.5px solid var(--cyan); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-1); line-height: 1.5;">PolygonEditor: click-add, rubber-band, Close Zone (≥3), Clear, auto-clear on source switch</span></div>
+          <div style="display: flex; gap: 10px; align-items: start;"><span style="width: 16px; height: 16px; border: 1.5px solid var(--cyan); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-1); line-height: 1.5;">AlertsPanel: newest-first list, new-tint for 2 s, click to open AlertDetailDrawer</span></div>
+          <div style="display: flex; gap: 10px; align-items: start;"><span style="width: 16px; height: 16px; border: 1.5px solid var(--cyan); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-1); line-height: 1.5;">AlertDetailDrawer with saved frame + metadata grid + actions</span></div>
+          <div style="display: flex; gap: 10px; align-items: start;"><span style="width: 16px; height: 16px; border: 1.5px solid var(--cyan); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-1); line-height: 1.5;">WS singleton + useReducer in App.tsx (no separate hooks)</span></div>
+          <div style="display: flex; gap: 10px; align-items: start;"><span style="width: 16px; height: 16px; border: 1.5px solid var(--cyan); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-1); line-height: 1.5;">All 7 states + WCAG AA + <code>prefers-reduced-motion</code></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sub-h-eyebrow">Deferred</div>
+      <div class="sub-h"><span class="kicker-dot"></span> Post-MVP backlog</div>
+      <div style="background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 8px; padding: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; gap: 10px; align-items: start; opacity: 0.75;"><span style="width: 16px; height: 16px; border: 1.5px dashed var(--ink-3); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Multi-zone support (draw &gt; 1 polygon, per-zone labels)</span></div>
+          <div style="display: flex; gap: 10px; align-items: start; opacity: 0.75;"><span style="width: 16px; height: 16px; border: 1.5px dashed var(--ink-3); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Class filters in alerts panel</span></div>
+          <div style="display: flex; gap: 10px; align-items: start; opacity: 0.75;"><span style="width: 16px; height: 16px; border: 1.5px dashed var(--ink-3); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Drag-to-edit polygon vertices</span></div>
+          <div style="display: flex; gap: 10px; align-items: start; opacity: 0.75;"><span style="width: 16px; height: 16px; border: 1.5px dashed var(--ink-3); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Search / filter alerts by time, class, track</span></div>
+          <div style="display: flex; gap: 10px; align-items: start; opacity: 0.75;"><span style="width: 16px; height: 16px; border: 1.5px dashed var(--ink-3); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">User accounts · persistent sessions</span></div>
+          <div style="display: flex; gap: 10px; align-items: start; opacity: 0.75;"><span style="width: 16px; height: 16px; border: 1.5px dashed var(--ink-3); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Settings panel (confidence threshold, tracker tuning)</span></div>
+          <div style="display: flex; gap: 10px; align-items: start; opacity: 0.75;"><span style="width: 16px; height: 16px; border: 1.5px dashed var(--ink-3); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Shareable event clips (short MP4 around alert time)</span></div>
+          <div style="display: flex; gap: 10px; align-items: start; opacity: 0.75;"><span style="width: 16px; height: 16px; border: 1.5px dashed var(--ink-3); border-radius: 3px; flex-shrink: 0; margin-top: 2px;"></span><span style="font-size: 13px; color: var(--ink-2); line-height: 1.5;">Multi-feed operator view</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div>NeuraWatch · Frontend Handoff Spec · v1.0</div>
+  <div class="right">Design → Engineering · April 2026</div>
+</footer>
+
+</body>
+</html>
