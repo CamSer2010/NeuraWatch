@@ -38,6 +38,9 @@ backend/storage/uploads/*
 .env.local
 .env.*.local
 
+# Claude Code (local-only — auto-mutated by the CLI per user)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
