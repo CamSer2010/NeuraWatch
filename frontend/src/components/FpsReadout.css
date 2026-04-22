@@ -1,0 +1,36 @@
+/* FpsReadout — NW-1502
+ *
+ * Mirrors design-specs §1 token usage for the header FPS pill:
+ *   - Mono 12px container, ink-2 default
+ *   - Uppercase 10px eyebrow label, ink-3
+ *   - Value weight 500, ink-0
+ *   - Baseline-aligned row, gap 6px, padding 5px 10px
+ *
+ * `min-width` locks the pill width to prevent a layout shift between
+ * a one-digit and three-digit FPS value (or the `—` placeholder).
+ * `tabular-nums` stops per-character width drift as the number ticks.
+ */
+
+.fps-readout {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  min-width: 72px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fps-readout__label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.fps-readout__val {
+  color: var(--ink-0);
+  font-weight: 500;
+}
