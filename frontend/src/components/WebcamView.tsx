@@ -119,6 +119,20 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
     }
   }, [])
 
+  // Entering `error` (pinned, per spec §System States) means the
+  // pipeline is dead — we can't use the webcam for anything until
+  // Reset Demo (NW-1405). Release the tracks so the camera LED
+  // doesn't stay lit during an unrecoverable state. We deliberately
+  // do NOT dispatch media/stop; status must stay at 'error' per the
+  // reducer invariant.
+  useEffect(() => {
+    if (state.status !== 'error') return
+    stopTracks(streamRef.current)
+    streamRef.current = null
+    const video = videoRef.current
+    if (video !== null) video.srcObject = null
+  }, [state.status])
+
   async function startCamera() {
     dispatch({ type: 'media/requesting' })
     try {
@@ -263,7 +277,10 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
         height={480}
       />
 
-      {state.cameraActive && (
+      {/* Hide Stop during `error` — the ErrorPanel owns recovery from
+       * here; stacking a Stop button next to it was visually stale
+       * (camera tracks are already released by the effect above). */}
+      {state.cameraActive && state.status !== 'error' && (
         <div className="webcam-view__controls">
           <button
             type="button"
