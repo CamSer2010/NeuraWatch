@@ -67,8 +67,10 @@ import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..config import get_settings
+from ..db import insert_alert
 from ..models.schemas import WireDetection, ZoneEvent
 from ..services.alert_service import AlertService
+from ..services.snapshot_service import SnapshotService
 from ..services.zone_service import ZoneService
 
 logger = logging.getLogger(__name__)
@@ -242,6 +244,8 @@ async def detect_ws(websocket: WebSocket) -> None:
 
     inference_service = websocket.app.state.inference_service
     frame_processor = websocket.app.state.frame_processor
+    db = websocket.app.state.db
+    settings = get_settings()
 
     # Claim the tracker before entering the try block. The early-return
     # on refusal BYPASSES the finally, which is intentional — we don't
@@ -271,8 +275,17 @@ async def detect_ws(websocket: WebSocket) -> None:
     # next. NW-1304: debounce_frames threaded from settings (env var
     # `DEBOUNCE_FRAMES`, default 2) suppresses boundary jitter.
     alert_service = AlertService(
-        debounce_frames=get_settings().debounce_frames,
+        debounce_frames=settings.debounce_frames,
     )
+    # NW-1402 snapshot writer — dedup by (track_id, event_type), saves
+    # JPEG off the event loop via asyncio.to_thread, stamps the path
+    # back onto the alerts row.
+    snapshot_service = SnapshotService(db=db, frames_dir=settings.frames_dir)
+    # Track in-flight snapshot tasks so we can drain them in the
+    # finally block. Without this, a WebSocketDisconnect mid-snapshot
+    # lets `asyncio` GC-warn about pending tasks being destroyed and
+    # occasionally truncates the JPEG on disk.
+    pending_snapshots: set[asyncio.Task[Any]] = set()
 
     try:
         while True:
@@ -294,10 +307,15 @@ async def detect_ws(websocket: WebSocket) -> None:
                         # history so anyone already inside the new
                         # polygon fires a fresh `enter` on the next
                         # frame. See AlertService.reset_state docstring.
+                        # SnapshotService dedup is scoped to the same
+                        # window: redrawing the zone means we want
+                        # fresh frames for anyone re-entering.
                         alert_service.reset_state()
+                        snapshot_service.reset()
                 elif isinstance(parsed, ZoneClearMsg):
                     zone_service.clear_zone(parsed.zone_version)
                     alert_service.reset_state()
+                    snapshot_service.reset()
                 elif isinstance(parsed, IgnoredMsg):
                     logger.debug("WS: ignored text (%s)", parsed.reason)
                 continue
@@ -364,6 +382,9 @@ async def detect_ws(websocket: WebSocket) -> None:
             in_zone_flags = zone_service.evaluate(pf.detections)
             events = alert_service.process_frame(pf.detections, in_zone_flags)
 
+            # Push events to the FE first so perceived latency stays
+            # at pure inference time — the downstream persistence
+            # (insert_alert + snapshot) runs after the send.
             await websocket.send_json(
                 _detection_result(
                     pf.seq,
@@ -375,6 +396,45 @@ async def detect_ws(websocket: WebSocket) -> None:
                     events,
                 )
             )
+
+            # NW-1402: persist each event and dispatch a snapshot save.
+            # insert_alert is awaited (DB write is fast, typically <1ms);
+            # snapshot_service.save_if_new is fire-and-forget via
+            # create_task so ~30ms of JPEG encode + disk write doesn't
+            # delay the next frame receive. Each task handles its own
+            # errors via SnapshotService / update_frame_path logging.
+            for event in events:
+                try:
+                    await insert_alert(
+                        db,
+                        alert_id=event.alert_id,
+                        timestamp=event.timestamp,
+                        track_id=event.track_id,
+                        object_class=event.object_class,
+                        event_type=event.event_type,
+                    )
+                except Exception:
+                    # A failed insert means the row doesn't exist —
+                    # don't dispatch the snapshot stamp against a
+                    # missing alert_id.
+                    logger.exception(
+                        "WS: insert_alert failed for alert_id=%s; "
+                        "skipping snapshot",
+                        event.alert_id,
+                    )
+                    continue
+                # Capture a REFERENCE to the current frame ndarray.
+                # `frame` is rebound by `cv2.imdecode` on every iter
+                # (fresh ndarray each time) so the background task
+                # holds its own buffer even after the loop moves on.
+                # If a future change recycles a buffer, this line will
+                # need an explicit `frame.copy()` — flagging here so
+                # we don't regress silently.
+                task = asyncio.create_task(
+                    snapshot_service.save_if_new(frame, event)
+                )
+                pending_snapshots.add(task)
+                task.add_done_callback(pending_snapshots.discard)
 
     except WebSocketDisconnect:
         logger.info("WS: client disconnected (session=%s)", session_id)
@@ -388,4 +448,9 @@ async def detect_ws(websocket: WebSocket) -> None:
             # Already closed; nothing more to do.
             pass
     finally:
+        # Drain in-flight snapshot tasks before releasing the session.
+        # `return_exceptions=True` keeps one broken task from blocking
+        # the rest and ensures the session release always runs.
+        if pending_snapshots:
+            await asyncio.gather(*pending_snapshots, return_exceptions=True)
         inference_service.release_session(session_id)
