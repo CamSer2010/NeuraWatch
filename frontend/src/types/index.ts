@@ -168,9 +168,17 @@ export function appReducer(state: AppState, action: Action): AppState {
         stats: null,
         lastZoneVersion: 0,
         lastEvents: [],
-        // Clear a prior camera-denied pin once the user has stopped.
-        // Leave `error` pinned (explicit Reset Demo per spec).
-        status: state.status === 'camera-denied' ? 'idle' : state.status,
+        // Stopping the webcam removes the source — we're back to 'idle'
+        // per spec §System States ("App boot, no source"). Exception:
+        // 'error' stays pinned; spec requires explicit Reset Demo
+        // (NW-1405) to clear it.
+        //
+        // `disconnectWs()` (called from WebcamView's cleanup effect
+        // when cameraActive flips false) closes the socket with code
+        // 1000; the wsClient onclose handler deliberately does NOT
+        // dispatch on normal closes — so this reducer case is the
+        // only place status transitions on stop.
+        status: state.status === 'error' ? 'error' : 'idle',
       }
 
     case 'ws/open':
