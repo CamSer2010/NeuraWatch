@@ -66,6 +66,7 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from ..config import get_settings
 from ..models.schemas import WireDetection, ZoneEvent
 from ..services.alert_service import AlertService
 from ..services.zone_service import ZoneService
@@ -267,8 +268,11 @@ async def detect_ws(websocket: WebSocket) -> None:
     # AlertService (NW-1303) keeps per-track in-zone state across
     # frames and emits enter/exit events on transitions. Also per-
     # connection so track IDs from one session don't leak into the
-    # next.
-    alert_service = AlertService()
+    # next. NW-1304: debounce_frames threaded from settings (env var
+    # `DEBOUNCE_FRAMES`, default 2) suppresses boundary jitter.
+    alert_service = AlertService(
+        debounce_frames=get_settings().debounce_frames,
+    )
 
     try:
         while True:

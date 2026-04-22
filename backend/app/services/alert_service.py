@@ -1,49 +1,77 @@
-"""Zone-boundary transition → event generation (NW-1303).
+"""Zone-boundary transition → event generation (NW-1303 + NW-1304).
 
 One `AlertService` per WebSocket connection. Consumes the per-frame
 `in_zone_flags` from `ZoneService.evaluate()` and emits `ZoneEvent`s
-only on state transitions, not on steady-state membership.
+only on *sustained* state transitions — a simple N-frame debounce
+suppresses the single-frame jitter that happens when a subject's
+bottom-center anchor wobbles right at the polygon boundary.
 
-AC (from JIRA NW-1303):
-- enter: `outside → inside` fires exactly one event
-- exit: `inside → outside` fires exactly one event
-- No repeat alerts while an object stays in the same state
-- Event payload: track_id, object_class, event_type, timestamp, alert_id
-- Events pushed through the existing WS connection (no REST polling)
+AC:
+- NW-1303: enter / exit on transitions; no repeats on steady-state;
+  payload = `{track_id, object_class, event_type, timestamp, alert_id}`;
+  events ride the WS, no REST polling.
+- NW-1304: `DEBOUNCE_FRAMES` env var, default 2. Oscillation ≤1
+  frame per side → 0 alerts. Clean ≥N-frame crossing → exactly 1.
+  Reset on /session/reset (NW-1405).
+
+State machine (per track, keyed on ByteTrack `track_id`):
+
+  confirmed_in_zone : bool | None   -- committed side; None until first commit
+  candidate_side    : bool | None   -- side we're accumulating toward
+  streak_count      : int           -- consecutive frames matching candidate_side
+
+  On each frame:
+    if first sighting:
+      candidate_side = observed, streak_count = 1
+    elif observed == confirmed_in_zone:
+      streak_count = 0         # we're on the confirmed side again; settled
+      candidate_side = None
+    elif candidate_side is None or observed != candidate_side:
+      candidate_side = observed, streak_count = 1    # new opposite streak
+    else:
+      streak_count += 1
+
+    if streak_count >= DEBOUNCE_FRAMES:
+      -- Candidate has survived long enough; commit.
+      if confirmed_in_zone is None or candidate_side != confirmed_in_zone:
+        fire event (enter if candidate_side else exit)
+      confirmed_in_zone = candidate_side
+      candidate_side = None
+      streak_count = 0
 
 Design choices:
-- **First-sighting-while-inside fires `enter`.** When a track appears
-  for the first time and its anchor is already inside the zone, we
-  treat the "unknown → inside" transition as a true enter. Without
-  this, someone already standing in a newly-drawn zone would never
-  alert until they left and came back — the opposite of what the
-  operator wants for a "who is in this zone right now" demo.
 
-- **Zone changes reset per-track state.** The WS handler calls
-  `reset_state()` on every `zone_update` / `zone_clear`. This makes
-  the next evaluation treat every visible track as a first-sighting,
-  so anyone already inside the new zone fires an immediate `enter`.
-  Matches spec §Interactions: "Source switching auto-clears the
-  polygon and bumps zone_version."
+- **First-sighting also goes through the debounce.** An unknown → X
+  transition is a transition like any other; it has to survive the
+  N-frame window before firing. At 10 FPS with DEBOUNCE_FRAMES=2
+  that's a ~100 ms delay on the "draw zone over standing operator"
+  flow — invisible for the demo, but guarantees we don't emit an
+  enter for a single-frame ghost detection.
+
+- **Reset-on-zone-change** (WS handler calls `reset_state()` on every
+  `zone_update` / `zone_clear`) clears BOTH the confirmed state AND
+  the pending streak, so a new polygon starts from a blank slate.
+  Does not emit phantom `exit`s for tracks inside the prior zone —
+  the operator's redraw declares a new question.
 
 - **`track_id is None` detections are skipped.** ByteTrack returns
-  `None` on the very first frame before association. Without an ID
-  we have nothing to tie a transition to, so we silently ignore.
+  None on the first frame before association. Without an ID we have
+  nothing to attach streak state to.
 
-- **Debounce is NOT here — NW-1304 wraps this service.** Raw per-
-  frame transitions are emitted verbatim; the 2-frame debounce
-  layer lives in its own module and can be toggled via env var.
+- **`debounce_frames=1` is a pass-through** (no debounce). Used in
+  the NW-1303 unit tests that predate this ticket; the WS handler
+  reads from `get_settings().debounce_frames` which defaults to 2
+  per PROJECT_PLAN decision #9.
 
-- **Track state map is unbounded.** ByteTrack recycles IDs
-  aggressively and our demo runs minutes at most, so the map won't
-  grow meaningfully. If we ever bounce up to a long-lived process
-  we'd add a periodic prune by last-seen frame — flagged for
-  future-us, not this ticket.
+- **Track state map is unbounded.** ByteTrack recycles IDs and our
+  demo runs minutes at most. If we ever move to a long-lived
+  process we'd prune by last-seen frame — flagged for future-us.
 """
 from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from ..models.schemas import EventType, ObjectClass, WireDetection, ZoneEvent
@@ -51,34 +79,69 @@ from ..models.schemas import EventType, ObjectClass, WireDetection, ZoneEvent
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class _TrackState:
+    """Per-track debounce state (see module docstring)."""
+
+    confirmed_in_zone: bool | None = None
+    candidate_side: bool | None = None
+    streak_count: int = 0
+
+
 class AlertService:
-    """Per-connection zone-event generator.
+    """Per-connection zone-event generator with N-frame debounce.
 
     Holds per-track in-zone state between frames. Not thread-safe on
     its own; the WS handler serialises calls via the event loop.
     """
 
-    def __init__(self) -> None:
-        self._track_state: dict[int, bool] = {}
+    def __init__(self, debounce_frames: int = 1) -> None:
+        """
+        Args:
+            debounce_frames: consecutive frames on the new side
+                required before a transition fires. 1 = pass-through
+                (any single-frame crossing fires). Must be >= 1.
+
+        IMPORTANT: production callers MUST pass `debounce_frames`
+        from `get_settings().debounce_frames` (default 2 per
+        PROJECT_PLAN decision #9). The constructor default of 1 here
+        is a pass-through for the NW-1303 unit tests that predate
+        the debounce work — it intentionally diverges from the
+        settings default so a call like `AlertService()` in new code
+        is obviously under-configured rather than silently wrong.
+        See `routes_ws.py detect_ws` for the canonical wiring.
+        """
+        if debounce_frames < 1:
+            raise ValueError(
+                f"debounce_frames must be >= 1, got {debounce_frames}"
+            )
+        self._debounce_frames = debounce_frames
+        self._tracks: dict[int, _TrackState] = {}
+
+    @property
+    def debounce_frames(self) -> int:
+        """Exposed for tests + logging only."""
+        return self._debounce_frames
 
     def reset_state(self) -> None:
-        """Forget all known track positions.
+        """Forget all known track positions AND pending debounce streaks.
 
-        Called by the WS handler when the zone changes (update OR
-        clear). After reset, the next frame treats every track as a
-        first-sighting — any track currently inside the new polygon
-        will fire a fresh `enter` event.
+        Called by the WS handler on `zone_update` / `zone_clear` and
+        (future) `/session/reset` (NW-1405). After reset, the next
+        frame treats every track as a first-sighting — any track
+        currently inside the new polygon fires a fresh `enter` once
+        the debounce window is satisfied.
 
         Intentionally does NOT emit `exit` events for tracks that
-        were inside the prior zone. The operator just redrew the
-        question; prior-zone exits are noise.
+        were inside the prior zone. The operator's redraw declares a
+        new question; prior-zone exits are noise.
         """
-        if self._track_state:
+        if self._tracks:
             logger.debug(
                 "AlertService: reset state (dropped %d tracks)",
-                len(self._track_state),
+                len(self._tracks),
             )
-        self._track_state.clear()
+        self._tracks.clear()
 
     def process_frame(
         self,
@@ -88,13 +151,11 @@ class AlertService:
         """Return the zone-boundary events triggered by this frame.
 
         `detections` and `in_zone_flags` must be parallel lists
-        (ZoneService.evaluate contract). Any detection with
-        `track_id is None` is skipped — we can't track transitions
-        without an ID.
+        (ZoneService.evaluate contract). Detections with
+        `track_id is None` are skipped.
 
-        Steady-state membership never produces events; only crossings
-        (including the unknown→inside case on first sighting of an
-        already-inside track) do.
+        Steady-state membership never produces events; only
+        debounced crossings do.
         """
         if len(detections) != len(in_zone_flags):
             raise ValueError(
@@ -110,23 +171,31 @@ class AlertService:
             if track_id is None:
                 continue
 
-            previously_in = self._track_state.get(track_id)
+            state = self._tracks.get(track_id)
+            if state is None:
+                state = _TrackState()
+                self._tracks[track_id] = state
 
-            if previously_in is None:
-                # First sighting of this track. Record its state;
-                # fire `enter` only if it starts inside (treated as
-                # unknown → inside transition for demo clarity).
-                if currently_in:
-                    events.append(
-                        _make_event(
-                            track_id=track_id,
-                            object_class=det.object_class,
-                            event_type="enter",
-                            timestamp=now_iso,
-                        )
-                    )
-            elif currently_in != previously_in:
-                event_type: EventType = "enter" if currently_in else "exit"
+            self._advance_streak(state, currently_in)
+
+            if state.streak_count < self._debounce_frames:
+                continue
+
+            # Streak survived — commit. Fire an event only if this is
+            # a genuine transition (first-ever confirm counts IF the
+            # committed side is `inside`, so the "operator already in
+            # the zone" scenario fires an enter after N frames).
+            is_transition = (
+                state.confirmed_in_zone is None and state.candidate_side is True
+            ) or (
+                state.confirmed_in_zone is not None
+                and state.candidate_side != state.confirmed_in_zone
+            )
+
+            if is_transition:
+                event_type: EventType = (
+                    "enter" if state.candidate_side else "exit"
+                )
                 events.append(
                     _make_event(
                         track_id=track_id,
@@ -136,9 +205,30 @@ class AlertService:
                     )
                 )
 
-            self._track_state[track_id] = currently_in
+            state.confirmed_in_zone = state.candidate_side
+            state.candidate_side = None
+            state.streak_count = 0
 
         return events
+
+    def _advance_streak(self, state: _TrackState, observed: bool) -> None:
+        """Update the track's candidate / streak for this frame's
+        observation. See module docstring state machine."""
+        if state.confirmed_in_zone is not None and observed == state.confirmed_in_zone:
+            # Back on the committed side — jitter dissolved. Reset
+            # any pending opposite streak.
+            state.candidate_side = None
+            state.streak_count = 0
+            return
+
+        if state.candidate_side == observed:
+            # Continuing the same candidate streak.
+            state.streak_count += 1
+        else:
+            # Fresh streak — either first sighting or the observation
+            # flipped before the previous candidate could commit.
+            state.candidate_side = observed
+            state.streak_count = 1
 
 
 def _now_iso() -> str:
