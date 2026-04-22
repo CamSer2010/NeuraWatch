@@ -122,4 +122,35 @@
 .webcam-view__controls {
   display: flex;
   gap: var(--sp-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Bottom-center hint pills (NW-1301). Two variants share the same
+ * base layout — one during drawing (neutral tint) and one for the
+ * no-polygon sub-state (cyan-keyed). Both sit above the canvas via
+ * z-index and are never shown simultaneously. */
+.webcam-view__hint {
+  position: absolute;
+  bottom: var(--sp-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-1);
+  background: rgba(15, 22, 32, 0.9); /* bg-1 with alpha */
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.webcam-view__hint--nozone {
+  color: var(--cyan);
+  background: rgba(24, 225, 217, 0.06);
+  border-color: rgba(24, 225, 217, 0.25);
 }
