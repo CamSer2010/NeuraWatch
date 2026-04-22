@@ -32,7 +32,9 @@ class Settings(BaseSettings):
     frames_dir: Path = BACKEND_ROOT / "storage" / "frames"
     uploads_dir: Path = BACKEND_ROOT / "storage" / "uploads"
     model_weights_dir: Path = BACKEND_ROOT / "storage" / "models"
-    database_url: str = f"sqlite:///{BACKEND_ROOT / 'storage' / 'neurawatch.db'}"
+    # aiosqlite takes a plain path, not a SQLAlchemy URL — keep this
+    # as a Path so `db.py` can hand it straight to `aiosqlite.connect`.
+    database_path: Path = BACKEND_ROOT / "storage" / "neurawatch.db"
 
     cors_origins: list[str] = Field(
         default_factory=lambda: [
@@ -43,7 +45,10 @@ class Settings(BaseSettings):
         ]
     )
 
-    @field_validator("frames_dir", "uploads_dir", "model_weights_dir", mode="after")
+    @field_validator(
+        "frames_dir", "uploads_dir", "model_weights_dir", "database_path",
+        mode="after",
+    )
     @classmethod
     def _resolve_relative(cls, value: Path) -> Path:
         return value if value.is_absolute() else (BACKEND_ROOT / value).resolve()

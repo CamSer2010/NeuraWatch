@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.health import router as health_router
 from .api.routes_ws import router as ws_router
 from .config import get_settings
+from .db import init_db, open_db
 from .services.frame_processor import FrameProcessor
 from .services.inference_service import InferenceService
 
@@ -64,10 +65,22 @@ async def lifespan(app: FastAPI):
     frame_processor.start()
     app.state.frame_processor = frame_processor
 
+    # NW-1401: one aiosqlite connection for the whole process. WAL
+    # journal mode lets the /alerts REST reader (NW-1403) and the
+    # WS-side writer (NW-1402) coexist without lock contention.
+    db = await open_db(settings.database_path)
+    await init_db(db)
+    app.state.db = db
+
     try:
         yield
     finally:
+        # Shutdown order matters: stop the FrameProcessor first so
+        # NW-1402's DB writes drain before the connection closes.
+        # Reversing this would surface as AttributeError / closed-db
+        # logs every shutdown once the NW-1402 wiring lands.
         frame_processor.stop()
+        await db.close()
 
 
 def create_app() -> FastAPI:
