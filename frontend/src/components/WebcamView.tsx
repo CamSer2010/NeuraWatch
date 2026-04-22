@@ -1,9 +1,16 @@
 import type { Dispatch } from 'react'
 import { useEffect, useRef } from 'react'
 
+import { WS_URL } from '../config'
+import { connectWs, disconnectWs, sendFrame } from '../services/wsClient'
 import type { Action, AppState } from '../types'
 import '../styles/buttons.css'
 import './WebcamView.css'
+
+// rAF drives the capture loop; the wsClient in-flight boolean is the
+// actual backpressure gate — most frames are dropped before send.
+// JPEG quality matches the backend benchmark (ratified decision #3).
+const CAPTURE_QUALITY = 0.6
 
 /**
  * Webcam input surface (NW-1201).
@@ -48,6 +55,59 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
       retryButtonRef.current?.focus()
     }
   }, [state.status])
+
+  // WS lifecycle: connect when the webcam is active, disconnect when
+  // it's not. The wsClient is a module-level singleton so repeated
+  // connect/disconnect calls are idempotent within the app.
+  useEffect(() => {
+    if (state.cameraActive) {
+      connectWs(WS_URL, dispatch, 'webcam')
+      return () => {
+        disconnectWs()
+      }
+    }
+    return undefined
+  }, [state.cameraActive, dispatch])
+
+  // Frame capture loop. Pulls each video frame into the 640×480
+  // capture canvas, encodes JPEG, hands it to wsClient.sendFrame.
+  // The client's inFlight boolean drops most frames; effective rate
+  // equals whatever the server sustains. Stops on camera/WS errors.
+  useEffect(() => {
+    if (!state.cameraActive) return
+    if (state.status === 'error' || state.status === 'disconnected') return
+
+    const video = videoRef.current
+    const canvas = captureCanvasRef.current
+    if (video === null || canvas === null) return
+    const ctx = canvas.getContext('2d')
+    if (ctx === null) return
+
+    let raf = 0
+    let stopped = false
+
+    const tick = () => {
+      if (stopped) return
+      // HAVE_CURRENT_DATA (2) or higher — the video has a usable frame.
+      if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob(
+          (blob) => {
+            if (blob !== null && !stopped) sendFrame(blob)
+          },
+          'image/jpeg',
+          CAPTURE_QUALITY,
+        )
+      }
+      raf = requestAnimationFrame(tick)
+    }
+
+    raf = requestAnimationFrame(tick)
+    return () => {
+      stopped = true
+      cancelAnimationFrame(raf)
+    }
+  }, [state.cameraActive, state.status])
 
   // Tear down MediaStream tracks on unmount — without this, some
   // browsers leave the webcam LED on after navigation.
@@ -246,7 +306,11 @@ function DeniedPanel({ error, onRetry, retryRef }: PanelProps) {
   )
 }
 
-function ErrorPanel({ error, onRetry, retryRef }: PanelProps) {
+function ErrorPanel({ error, retryRef }: PanelProps) {
+  // `error` status is pinned per spec §System States — recovery
+  // requires explicit Reset Demo (NW-1405). Retry would silently
+  // no-op today (reducer doesn't clear `error` on media/ready), so
+  // we surface that honestly instead of staging theater.
   return (
     <div
       className="webcam-view__alert webcam-view__alert--error"
@@ -254,17 +318,21 @@ function ErrorPanel({ error, onRetry, retryRef }: PanelProps) {
       aria-live="assertive"
     >
       <p className="webcam-view__eyebrow webcam-view__eyebrow--red">Error</p>
-      <h2 className="webcam-view__title">Camera unavailable.</h2>
+      <h2 className="webcam-view__title">Something went wrong.</h2>
       <p className="webcam-view__lede">
-        {error ?? 'Could not start the camera.'}
+        {error ?? 'The live pipeline hit an error it cannot recover from on its own.'}
+      </p>
+      <p className="webcam-view__lede">
+        Reset Demo will be wired in NW-1405. For now, refresh the page to reset state.
       </p>
       <button
         ref={retryRef}
         type="button"
         className="btn btn--primary"
-        onClick={onRetry}
+        disabled
+        aria-disabled="true"
       >
-        Retry
+        Waiting for Reset Demo
       </button>
     </div>
   )
