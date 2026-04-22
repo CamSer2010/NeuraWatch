@@ -161,7 +161,12 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
         zone_version: state.zoneVersion,
       })
     } else {
-      sendMessage({ type: 'zone_clear' })
+      // NW-1302: zone_clear carries the version so the server keeps
+      // its monotonic echo in sync. Without it, every clear would
+      // leave the server's zone_version stuck at whatever the last
+      // update was, and the client's NW-1204 version-mismatch gate
+      // would see a phantom lag forever after a clear.
+      sendMessage({ type: 'zone_clear', zone_version: state.zoneVersion })
     }
   }, [state.zoneVersion, state.zoneClosed, state.zonePoints])
 
@@ -216,7 +221,13 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
     // server knew about a polygon (zoneClosed) — otherwise it's a
     // no-op that'd clutter the wire for no gain.
     if (state.zoneClosed) {
-      sendMessage({ type: 'zone_clear' })
+      // media/stop will bump zoneVersion by 1; send the post-bump
+      // value so the server stays version-aligned with the client
+      // even though this clear lands before the reducer runs.
+      sendMessage({
+        type: 'zone_clear',
+        zone_version: state.zoneVersion + 1,
+      })
     }
 
     stopTracks(streamRef.current)
