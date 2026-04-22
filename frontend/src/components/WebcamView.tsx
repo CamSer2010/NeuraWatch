@@ -2,10 +2,16 @@ import type { Dispatch } from 'react'
 import { useEffect, useRef } from 'react'
 
 import { WS_URL } from '../config'
-import { connectWs, disconnectWs, sendFrame } from '../services/wsClient'
+import {
+  connectWs,
+  disconnectWs,
+  sendFrame,
+  sendMessage,
+} from '../services/wsClient'
 import type { Action, AppState } from '../types'
 import '../styles/buttons.css'
 import { LiveFeedCanvas } from './LiveFeedCanvas'
+import { PolygonToolbar } from './PolygonToolbar'
 import './WebcamView.css'
 
 // rAF drives the capture loop; the wsClient in-flight boolean is the
@@ -133,6 +139,32 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
     if (video !== null) video.srcObject = null
   }, [state.status])
 
+  // Outbound zone sync (NW-1301). Whenever the client zoneVersion
+  // advances, send the server either a `zone_update` (we have a
+  // committed polygon) or a `zone_clear` (we don't). sendMessage
+  // silently no-ops while the socket isn't OPEN, which is fine — the
+  // version persists in state, so the next close/clear carries the
+  // correct geometry once the WS re-opens.
+  //
+  // Using a ref for the last-sent version keeps the effect's deps
+  // minimal; we want this to fire exactly once per zoneVersion tick,
+  // regardless of which other parts of state changed alongside it.
+  const lastSentZoneVersionRef = useRef<number>(0)
+  useEffect(() => {
+    if (state.zoneVersion === lastSentZoneVersionRef.current) return
+    if (state.zoneVersion === 0) return // never sent; initial state
+    lastSentZoneVersionRef.current = state.zoneVersion
+    if (state.zoneClosed && state.zonePoints.length >= 3) {
+      sendMessage({
+        type: 'zone_update',
+        points: state.zonePoints,
+        zone_version: state.zoneVersion,
+      })
+    } else {
+      sendMessage({ type: 'zone_clear' })
+    }
+  }, [state.zoneVersion, state.zoneClosed, state.zonePoints])
+
   async function startCamera() {
     dispatch({ type: 'media/requesting' })
     try {
@@ -174,6 +206,19 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
   }
 
   function stopCamera() {
+    // Flush any server-side polygon on the still-open socket BEFORE
+    // we dispatch media/stop. The reducer bumps zoneVersion on stop,
+    // but the zone-sync effect can't flush it — React runs WS
+    // lifecycle cleanup (disconnectWs) before the new version lands,
+    // so `sendMessage` would fire into a closed socket and drop the
+    // clear on the floor. Sending synchronously here guarantees the
+    // server sees the clear on the live session. Only bother if the
+    // server knew about a polygon (zoneClosed) — otherwise it's a
+    // no-op that'd clutter the wire for no gain.
+    if (state.zoneClosed) {
+      sendMessage({ type: 'zone_clear' })
+    }
+
     stopTracks(streamRef.current)
     streamRef.current = null
     const video = videoRef.current
@@ -213,14 +258,51 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
           autoPlay={false}
         />
 
-        {/* NW-1204 overlay — bboxes + labels above the <video>. Stays
-         * mounted (cheap rAF loop that blanks itself when !active) so
-         * the canvas preserves its resolved color cache across stops. */}
+        {/* NW-1204 + NW-1301 overlay — bboxes, labels, polygon,
+         * rubber-band, all on the single canvas. Stays mounted
+         * (cheap rAF loop that blanks itself when nothing to draw)
+         * so the canvas preserves its resolved color cache across
+         * stops. */}
         <LiveFeedCanvas
           detections={state.detections}
           lastZoneVersion={state.lastZoneVersion}
           active={state.cameraActive && state.status === 'live'}
+          cameraActive={state.cameraActive}
+          zoneDrawing={state.zoneDrawing}
+          zonePoints={state.zonePoints}
+          zoneClosed={state.zoneClosed}
+          onAddPoint={(p) => dispatch({ type: 'zone/add-point', point: p })}
+          onRemoveLastPoint={() =>
+            dispatch({ type: 'zone/remove-last-point' })
+          }
+          onCloseZone={() => dispatch({ type: 'zone/close' })}
+          onCancelDraw={() => dispatch({ type: 'zone/cancel-draw' })}
         />
+
+        {/* Drawing hint pill — spec §3 drawing polygon copy. Sits
+         * bottom-center of the stage, above the video and the canvas
+         * overlay. */}
+        {state.zoneDrawing && (
+          <p className="webcam-view__hint" role="status">
+            Click to add vertex · Close Zone when ready · Esc to cancel
+          </p>
+        )}
+
+        {/* No-polygon hint (spec §System States sub-state) — show
+         * only when the camera is running and the user hasn't closed
+         * a zone yet. Hidden during drawing (the hint above covers
+         * that case). */}
+        {state.cameraActive &&
+          !state.zoneDrawing &&
+          !state.zoneClosed &&
+          state.status !== 'error' && (
+            <p
+              className="webcam-view__hint webcam-view__hint--nozone"
+              role="status"
+            >
+              ⚑ Draw a zone to enable alerts
+            </p>
+          )}
 
         {showIdle && (
           <div className="webcam-view__slate">
@@ -277,11 +359,18 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
         height={480}
       />
 
-      {/* Hide Stop during `error` — the ErrorPanel owns recovery from
-       * here; stacking a Stop button next to it was visually stale
-       * (camera tracks are already released by the effect above). */}
+      {/* Hide controls during `error` — the ErrorPanel owns recovery
+       * from here; stacking a Stop button next to it was visually
+       * stale (camera tracks are already released by the effect
+       * above). */}
       {state.cameraActive && state.status !== 'error' && (
         <div className="webcam-view__controls">
+          <PolygonToolbar
+            dispatch={dispatch}
+            drawing={state.zoneDrawing}
+            closed={state.zoneClosed}
+            points={state.zonePoints.length}
+          />
           <button
             type="button"
             className="btn btn--danger"

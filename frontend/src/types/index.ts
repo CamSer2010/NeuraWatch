@@ -54,6 +54,11 @@ export interface DetectionStats {
   roundtrip_ms?: number
 }
 
+/** A polygon vertex, normalized 0–1 against the 640×480 processed
+ * frame. Same coordinate space as `Detection.bbox` (ratified
+ * decision #5) so point-in-polygon math in NW-1302 is trivial. */
+export type Point = [number, number]
+
 /** Shape of the server-sent `detection_result` payload, after the
  * wire→app mapping in wsClient.ts. */
 export interface DetectionResult {
@@ -87,6 +92,24 @@ export interface AppState {
   /** Raw events from the last frame. NW-1303 will narrow the type and
    * push these into a persisted alerts list. */
   lastEvents: unknown[]
+
+  // --- Zone polygon (NW-1301) ---
+  //
+  // One polygon, stored as normalized 0–1 coords. `zoneClosed` reflects
+  // whether the user has committed the shape (Close Zone button); until
+  // then the `points` are an in-progress sketch and alerts are paused
+  // (`no-polygon` sub-state per spec §System States).
+  //
+  // `zoneVersion` is a monotonic counter bumped every time the polygon
+  // changes (close, clear). We send it to the server on each `zone_update`
+  // / `zone_clear`, and the server echoes it on every subsequent
+  // `detection_result`. NW-1204's render gate compares `lastZoneVersion`
+  // (server echo) against `zoneVersion` (client truth); mismatches mean
+  // the server's events belong to an older polygon and should be muted.
+  zoneDrawing: boolean
+  zonePoints: Point[]
+  zoneClosed: boolean
+  zoneVersion: number
 }
 
 export const initialAppState: AppState = {
@@ -98,6 +121,10 @@ export const initialAppState: AppState = {
   stats: null,
   lastZoneVersion: 0,
   lastEvents: [],
+  zoneDrawing: false,
+  zonePoints: [],
+  zoneClosed: false,
+  zoneVersion: 0,
 }
 
 /**
@@ -123,6 +150,12 @@ export type Action =
   | { type: 'ws/open' }
   | { type: 'ws/close'; retry: boolean }
   | { type: 'ws/frame'; payload: DetectionResult }
+  | { type: 'zone/start-draw' }
+  | { type: 'zone/add-point'; point: Point }
+  | { type: 'zone/remove-last-point' }
+  | { type: 'zone/close' }
+  | { type: 'zone/clear' }
+  | { type: 'zone/cancel-draw' }
 
 export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -168,6 +201,16 @@ export function appReducer(state: AppState, action: Action): AppState {
         stats: null,
         lastZoneVersion: 0,
         lastEvents: [],
+        // Stopping the source invalidates the zone — spec §Interactions:
+        // "Source switching auto-clears the polygon and bumps
+        // zone_version". Stop is the degenerate case of a source
+        // switch (to nothing). We bump the version here so the
+        // outbound-zone effect fires a `zone_clear` on the socket
+        // before it closes.
+        zoneDrawing: false,
+        zonePoints: [],
+        zoneClosed: false,
+        zoneVersion: state.zoneVersion + 1,
         // Stopping the webcam removes the source — we're back to 'idle'
         // per spec §System States ("App boot, no source"). Exception:
         // 'error' stays pinned; spec requires explicit Reset Demo
@@ -222,6 +265,69 @@ export function appReducer(state: AppState, action: Action): AppState {
         lastZoneVersion: action.payload.zone_version,
         lastEvents: action.payload.events,
       }
+
+    case 'zone/start-draw':
+      // Entering drawing mode discards any previously-closed polygon
+      // (spec §Control strip: "Redraw" replaces the committed shape).
+      // When there WAS a committed polygon, bump the version
+      // immediately so the outbound-zone effect fires a zone_clear on
+      // the server before the user starts placing new points. Without
+      // this, a Draw-then-Esc sequence would leave the server holding
+      // a polygon the client believes is gone.
+      return {
+        ...state,
+        zoneDrawing: true,
+        zonePoints: [],
+        zoneClosed: false,
+        zoneVersion: state.zoneClosed
+          ? state.zoneVersion + 1
+          : state.zoneVersion,
+      }
+
+    case 'zone/add-point':
+      if (!state.zoneDrawing) return state
+      return { ...state, zonePoints: [...state.zonePoints, action.point] }
+
+    case 'zone/remove-last-point':
+      if (!state.zoneDrawing || state.zonePoints.length === 0) return state
+      return { ...state, zonePoints: state.zonePoints.slice(0, -1) }
+
+    case 'zone/close':
+      // Spec §3: Close Zone button disabled until points.length >= 3.
+      // Reducer also refuses below the threshold so stray key/click
+      // paths can't sneak past the UI gate.
+      if (!state.zoneDrawing || state.zonePoints.length < 3) return state
+      return {
+        ...state,
+        zoneDrawing: false,
+        zoneClosed: true,
+        zoneVersion: state.zoneVersion + 1,
+        // Keep the open-ring shape in state. Canvas closes it
+        // visually via ctx.closePath(); Shapely (NW-1302) accepts
+        // open rings. Duplicating the first vertex here would inflate
+        // the wire payload and let the `>= 3` close guard accept a
+        // degenerate 2-unique-vertex polygon (3 wire points).
+      }
+
+    case 'zone/clear':
+      // Idempotent — clearing a nonexistent zone still bumps the
+      // version so the server always sees a clear message after Clear
+      // is clicked (handles the case where the user clicks Clear
+      // during drawing before a close).
+      return {
+        ...state,
+        zoneDrawing: false,
+        zonePoints: [],
+        zoneClosed: false,
+        zoneVersion: state.zoneVersion + 1,
+      }
+
+    case 'zone/cancel-draw':
+      // Esc pressed during drawing — drop the in-progress sketch
+      // without touching any previously-committed polygon. Does NOT
+      // bump zoneVersion because nothing committed changed.
+      if (!state.zoneDrawing) return state
+      return { ...state, zoneDrawing: false, zonePoints: [] }
 
     default:
       // Exhaustive union should keep this unreachable.

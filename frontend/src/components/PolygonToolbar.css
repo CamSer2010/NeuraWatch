@@ -1,0 +1,12 @@
+/* PolygonToolbar — NW-1301
+ *
+ * Sits in WebcamView's controls row alongside the Stop webcam
+ * button. Mirrors the button primitives in `styles/buttons.css`;
+ * this file only owns the group layout.
+ */
+
+.polygon-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}

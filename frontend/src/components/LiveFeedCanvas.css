@@ -21,3 +21,13 @@
   pointer-events: none;
   z-index: 2;
 }
+
+/* Drawing mode (NW-1301) flips the canvas into a click surface and
+ * swaps the cursor to a crosshair per design-specs §3 Live Monitoring
+ * drawing polygon. Pointer capture falls through to the video when
+ * not drawing so the rest of the app (none of which wants clicks on
+ * the overlay today) behaves unchanged. */
+.live-feed-canvas[data-drawing='true'] {
+  pointer-events: auto;
+  cursor: crosshair;
+}
