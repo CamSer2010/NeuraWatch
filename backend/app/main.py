@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.health import router as health_router
+from .api.routes_ws import router as ws_router
 from .config import get_settings
 from .services.frame_processor import FrameProcessor
 from .services.inference_service import InferenceService
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(ws_router)
     return app
 
 
