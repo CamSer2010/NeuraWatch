@@ -10,7 +10,7 @@ export function App() {
 
   return (
     <div className="app">
-      <StatusBar status={state.status} />
+      <StatusBar status={state.status} fps={state.stats?.fps ?? null} />
       <main className="app__main">
         {/* NW-1202 VideoSourceSelector lands to the left of WebcamView. */}
         {/* NW-1404 AlertsPanel + NW-1405 Reset button land to the right. */}
