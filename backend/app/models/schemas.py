@@ -83,3 +83,41 @@ class ProcessedFrame(BaseModel):
 
     seq: int = Field(description="Monotonic frame sequence the caller submitted.")
     detections: list[WireDetection] = Field(default_factory=list)
+
+
+EventType = Literal["enter", "exit"]
+
+
+class ZoneEvent(BaseModel):
+    """One zone boundary transition (NW-1303).
+
+    Emitted by `AlertService.process_frame()` when a tracked object's
+    in-zone state changes between consecutive frames. Serialized into
+    the `detection_result.events` array and pushed through the existing
+    WS connection — no REST polling per AC.
+
+    NW-1401/1402 will persist these to SQLite alongside a snapshot
+    frame. The fields here are the minimal shape the DB needs, plus
+    `alert_id` so the client can dedup against REST-fetched history
+    once NW-1403 lands.
+    """
+
+    track_id: int = Field(
+        description="ByteTrack ID of the object that crossed the zone."
+    )
+    object_class: ObjectClass = Field(
+        description="Normalized category: person | vehicle | bicycle.",
+    )
+    event_type: EventType = Field(
+        description="'enter' for outside→inside, 'exit' for inside→outside.",
+    )
+    timestamp: str = Field(
+        description="ISO 8601 UTC string stamped at event detection time.",
+    )
+    alert_id: str = Field(
+        description=(
+            "Stable per-event identifier (uuid4 hex). Persists across "
+            "the WS push and the NW-1403 REST fetch so the client can "
+            "dedupe."
+        ),
+    )

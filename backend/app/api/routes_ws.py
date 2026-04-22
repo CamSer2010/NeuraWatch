@@ -15,7 +15,11 @@ Protocol (mirrors `frontend/design-specs/README.md` §6):
       "detections":[
         {"class":"person","bbox":[x1,y1,x2,y2],"confidence":0.9,"track_id":1}
       ],
-      "events": [],               # NW-1303 populates
+      "events": [                 # NW-1303; one entry per boundary crossing this frame
+        {"track_id":1,"object_class":"person","event_type":"enter",
+         "timestamp":"2026-04-22T18:33:07.123456+00:00",
+         "alert_id":"a3f1c2..."}
+      ],
       "zone_version": 0,          # NW-1301 populates
       "stats": {
         "fps": 12.3,
@@ -62,7 +66,8 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..models.schemas import WireDetection
+from ..models.schemas import WireDetection, ZoneEvent
+from ..services.alert_service import AlertService
 from ..services.zone_service import ZoneService
 
 logger = logging.getLogger(__name__)
@@ -182,6 +187,19 @@ def _serialize_detection(d: WireDetection) -> dict[str, Any]:
     }
 
 
+def _serialize_event(e: ZoneEvent) -> dict[str, Any]:
+    """NW-1303 wire shape. Pydantic's `model_dump()` gives the right
+    keys already (no field renames), but going through a helper keeps
+    the JSON boundary explicit and easy to version later."""
+    return {
+        "track_id": e.track_id,
+        "object_class": e.object_class,
+        "event_type": e.event_type,
+        "timestamp": e.timestamp,
+        "alert_id": e.alert_id,
+    }
+
+
 def _detection_result(
     seq: int,
     mode: str,
@@ -189,13 +207,14 @@ def _detection_result(
     fps: float,
     roundtrip_ms: float,
     zone_version: int,
+    events: list[ZoneEvent],
 ) -> dict[str, Any]:
     return {
         "type": "detection_result",
         "seq": seq,
         "mode": mode,
         "detections": [_serialize_detection(d) for d in detections],
-        "events": [],          # NW-1303 populates
+        "events": [_serialize_event(e) for e in events],  # NW-1303
         "zone_version": zone_version,  # NW-1302: echo ZoneService's view
         "stats": {
             "fps": round(fps, 2),
@@ -245,6 +264,11 @@ async def detect_ws(websocket: WebSocket) -> None:
     # state on every reconnect so the next client isn't handed the
     # previous one's zone.
     zone_service = ZoneService()
+    # AlertService (NW-1303) keeps per-track in-zone state across
+    # frames and emits enter/exit events on transitions. Also per-
+    # connection so track IDs from one session don't leak into the
+    # next.
+    alert_service = AlertService()
 
     try:
         while True:
@@ -259,9 +283,17 @@ async def detect_ws(websocket: WebSocket) -> None:
                 if isinstance(parsed, FrameMetaMsg):
                     pending_meta = parsed
                 elif isinstance(parsed, ZoneUpdateMsg):
-                    zone_service.set_zone(parsed.points, parsed.zone_version)
+                    if zone_service.set_zone(
+                        parsed.points, parsed.zone_version
+                    ):
+                        # Zone geometry changed — forget per-track
+                        # history so anyone already inside the new
+                        # polygon fires a fresh `enter` on the next
+                        # frame. See AlertService.reset_state docstring.
+                        alert_service.reset_state()
                 elif isinstance(parsed, ZoneClearMsg):
                     zone_service.clear_zone(parsed.zone_version)
+                    alert_service.reset_state()
                 elif isinstance(parsed, IgnoredMsg):
                     logger.debug("WS: ignored text (%s)", parsed.reason)
                 continue
@@ -323,12 +355,10 @@ async def detect_ws(websocket: WebSocket) -> None:
             last_frame_ts = now
 
             # NW-1302: evaluate detections against the current polygon.
-            # The flags are computed now (exercising the cache / prepared
-            # geometry) but not surfaced on the wire yet — NW-1303 will
-            # consume them to emit enter/exit events. `zone_version` IS
-            # surfaced, so the client can tell which polygon was active
-            # at evaluation time.
-            zone_service.evaluate(pf.detections)
+            # NW-1303: feed the parallel flags through AlertService
+            # to convert steady-state membership into transition events.
+            in_zone_flags = zone_service.evaluate(pf.detections)
+            events = alert_service.process_frame(pf.detections, in_zone_flags)
 
             await websocket.send_json(
                 _detection_result(
@@ -338,6 +368,7 @@ async def detect_ws(websocket: WebSocket) -> None:
                     fps_ema,
                     roundtrip_ms,
                     zone_service.zone_version,
+                    events,
                 )
             )
 
