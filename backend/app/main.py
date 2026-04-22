@@ -6,6 +6,7 @@ Dev run (from `backend/`):
 WS / alerts / upload routers land in NW-1203 / 1403 / 1202.
 """
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -16,6 +17,24 @@ from .api.routes_ws import router as ws_router
 from .config import get_settings
 from .services.frame_processor import FrameProcessor
 from .services.inference_service import InferenceService
+
+# Configure root logger so INFO-level messages from `app.*` services
+# surface in the uvicorn terminal. Uvicorn's default only configures
+# its own loggers, leaving root handler-less — Python then falls back
+# to WARNING-or-above on stderr, which silently drops our
+# `logger.info(...)` breadcrumbs (zone installs/clears, session
+# claims, etc.).
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s %(name)s: %(message)s",
+)
+
+# Cap known-chatty third-party loggers at WARNING so the terminal
+# stays focused on app.* breadcrumbs. Ultralytics is the loudest —
+# it logs per-prediction timing at INFO — and would otherwise drown
+# out exactly the signals this bootstrap was added to surface.
+for _noisy in ("ultralytics", "PIL", "matplotlib", "asyncio"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 
 @asynccontextmanager

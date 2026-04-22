@@ -63,6 +63,7 @@ import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..models.schemas import WireDetection
+from ..services.zone_service import ZoneService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
@@ -101,7 +102,11 @@ class ZoneUpdateMsg:
 
 @dataclass
 class ZoneClearMsg:
-    pass
+    # NW-1302: clear carries the post-clear zone_version so the
+    # server can keep its monotonic echo in sync with the client. A
+    # clear without a version would force the server to invent one,
+    # which could diverge from whatever the client thinks is current.
+    zone_version: int
 
 
 @dataclass
@@ -152,7 +157,11 @@ def _parse_text_message(text: str) -> ClientMsg:
         return ZoneUpdateMsg(points=points, zone_version=zone_version)
 
     if msg_type == "zone_clear":
-        return ZoneClearMsg()
+        try:
+            zone_version = int(parsed.get("zone_version", 0))
+        except (TypeError, ValueError):
+            return IgnoredMsg("invalid zone_version on zone_clear")
+        return ZoneClearMsg(zone_version=zone_version)
 
     return IgnoredMsg(f"unknown type {msg_type!r}")
 
@@ -179,6 +188,7 @@ def _detection_result(
     detections: list[WireDetection],
     fps: float,
     roundtrip_ms: float,
+    zone_version: int,
 ) -> dict[str, Any]:
     return {
         "type": "detection_result",
@@ -186,7 +196,7 @@ def _detection_result(
         "mode": mode,
         "detections": [_serialize_detection(d) for d in detections],
         "events": [],          # NW-1303 populates
-        "zone_version": 0,     # NW-1301 populates
+        "zone_version": zone_version,  # NW-1302: echo ZoneService's view
         "stats": {
             "fps": round(fps, 2),
             # `inference_ms` is the spec-mandated field name. Historical
@@ -231,6 +241,10 @@ async def detect_ws(websocket: WebSocket) -> None:
     pending_meta: FrameMetaMsg | None = None
     fps_ema: float = 0.0
     last_frame_ts: float | None = None
+    # One ZoneService per WS connection (NW-1302). Fresh polygon-less
+    # state on every reconnect so the next client isn't handed the
+    # previous one's zone.
+    zone_service = ZoneService()
 
     try:
         while True:
@@ -244,9 +258,10 @@ async def detect_ws(websocket: WebSocket) -> None:
                 parsed = _parse_text_message(text)
                 if isinstance(parsed, FrameMetaMsg):
                     pending_meta = parsed
-                elif isinstance(parsed, (ZoneUpdateMsg, ZoneClearMsg)):
-                    # NW-1301 will wire ZoneService here.
-                    logger.debug("WS: zone message deferred to NW-1301")
+                elif isinstance(parsed, ZoneUpdateMsg):
+                    zone_service.set_zone(parsed.points, parsed.zone_version)
+                elif isinstance(parsed, ZoneClearMsg):
+                    zone_service.clear_zone(parsed.zone_version)
                 elif isinstance(parsed, IgnoredMsg):
                     logger.debug("WS: ignored text (%s)", parsed.reason)
                 continue
@@ -307,9 +322,22 @@ async def detect_ws(websocket: WebSocket) -> None:
                     )
             last_frame_ts = now
 
+            # NW-1302: evaluate detections against the current polygon.
+            # The flags are computed now (exercising the cache / prepared
+            # geometry) but not surfaced on the wire yet — NW-1303 will
+            # consume them to emit enter/exit events. `zone_version` IS
+            # surfaced, so the client can tell which polygon was active
+            # at evaluation time.
+            zone_service.evaluate(pf.detections)
+
             await websocket.send_json(
                 _detection_result(
-                    pf.seq, meta.mode, pf.detections, fps_ema, roundtrip_ms
+                    pf.seq,
+                    meta.mode,
+                    pf.detections,
+                    fps_ema,
+                    roundtrip_ms,
+                    zone_service.zone_version,
                 )
             )
 
