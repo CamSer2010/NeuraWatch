@@ -1,0 +1,23 @@
+/* LiveFeedCanvas — NW-1204
+ *
+ * Single overlay canvas sitting above the <video> and below the idle
+ * / denied slates. The stage in WebcamView.css is `position: relative`
+ * and sized to `--capture-w` × `--capture-h`, so `inset: 0` pins the
+ * canvas to the full feed area.
+ *
+ * `pointer-events: none` keeps clicks passing through to NW-1301's
+ * polygon canvas (which will sit on its own layer later). z-index 2
+ * puts the overlay above the <video> (z=1) and below slates/alerts
+ * (z=2 as well but mounted conditionally and with opaque backgrounds,
+ * so they visually cover the overlay when present).
+ */
+
+.live-feed-canvas {
+  position: absolute;
+  inset: 0;
+  width: var(--capture-w);
+  height: var(--capture-h);
+  display: block;
+  pointer-events: none;
+  z-index: 2;
+}
