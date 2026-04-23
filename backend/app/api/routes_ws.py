@@ -105,6 +105,33 @@ _CLOSE_SESSION_CONFLICT = 4409
 
 _VALID_MODES = ("webcam", "upload")
 
+# NW-1202: target wall-clock inference rate for upload processing. Two
+# distinct roles for this constant:
+#
+#   1. SAMPLING RATE — source videos are 24-60 FPS. Running inference
+#      on every source frame at CPU speed (~10-30 FPS depending on
+#      hardware) would either take 2-3× the video's duration (slow
+#      CPU), or finish in a third of the duration (fast CPU like M1).
+#      We sample source frames so inference runs at this target FPS.
+#
+#   2. WALL-CLOCK PACING — on fast hardware (M1 YOLO runs at
+#      20-30 FPS raw), even sampled inference finishes in ~10 s for
+#      a 29 s video. Then `processing_complete` fires while the
+#      HTML5 `<video>` is only a third of the way through playback,
+#      and the client's prediction buffer wraps past its cap, so
+#      early pts ranges have no overlays by the time playback
+#      reaches them.
+#
+# Fix for both: process at this target FPS *in wall-clock time* via
+# an `asyncio.sleep` throttle. Each detection_result goes out at
+# ~100 ms intervals (10 FPS), so a 29 s clip takes ~29 s to process,
+# matching playback rhythm regardless of hardware speed. The
+# client's prediction buffer (bounded) only needs to hold ~duration
+# × target_fps entries — a 5-minute video at 10 FPS = 3000, which
+# matches UPLOAD_BUFFER_MAX on the FE.
+_UPLOAD_TARGET_FPS = 10.0
+_UPLOAD_TARGET_INTERVAL_S = 1.0 / _UPLOAD_TARGET_FPS
+
 
 # ---- Parsed client messages --------------------------------------------
 
@@ -330,15 +357,56 @@ async def _process_upload(
         if source_fps is None or source_fps <= 0:
             source_fps = 0.0
 
+        # Sample to keep processing wall-clock time ≈ video duration.
+        # Round to nearest integer — a 30 fps source with target 10
+        # gives skip_ratio=3 (process every 3rd frame). For 24 fps
+        # source, skip_ratio=2 (process every 2nd). Clamps at 1 so a
+        # low-fps source (<= target) gets every frame.
+        if source_fps > _UPLOAD_TARGET_FPS:
+            skip_ratio = max(1, int(round(source_fps / _UPLOAD_TARGET_FPS)))
+        else:
+            skip_ratio = 1
+        logger.info(
+            "process_upload: source_fps=%.2f target_fps=%.2f skip_ratio=%d",
+            source_fps,
+            _UPLOAD_TARGET_FPS,
+            skip_ratio,
+        )
+
         frame_idx = 0
+        processed_count = 0
         alerts_created = 0
         fps_ema = 0.0
         last_tick: float | None = None
+        # Wall-clock pacing: the server paces at _UPLOAD_TARGET_FPS
+        # even when inference could run faster. Without this, fast
+        # hardware (M1) finishes a 29s clip in ~10s and the FE gets
+        # `processing_complete` before the user has watched half
+        # the video. See _UPLOAD_TARGET_FPS docstring.
+        last_send_wall: float | None = None
 
         while True:
-            ok, frame = await asyncio.to_thread(cap.read)
-            if not ok or frame is None:
+            # `grab()` is cheap — decodes nothing, advances the file
+            # pointer. Only `retrieve()` does the actual decode +
+            # color-conversion pass. On sampled frames we pay for
+            # both; on skipped frames we only pay the grab. This is
+            # the standard cv2 idiom for fps downsampling.
+            ok = await asyncio.to_thread(cap.grab)
+            if not ok:
                 break
+
+            if frame_idx % skip_ratio != 0:
+                frame_idx += 1
+                continue
+
+            ok, frame = await asyncio.to_thread(cap.retrieve)
+            if not ok or frame is None:
+                # cv2 sometimes grabs past a corrupt packet but can't
+                # retrieve it. Skip this frame position rather than
+                # bail — usually the next grab+retrieve succeeds and
+                # we keep going.
+                frame_idx += 1
+                continue
 
             # Back-compute pts from frame_idx / source_fps rather than
             # reading CAP_PROP_POS_MSEC (which points to the NEXT
@@ -376,6 +444,16 @@ async def _process_upload(
             events = alert_service.process_frame(detections, in_zone_flags)
             alerts_created += len(events)
 
+            # Wall-clock pacing — sleep so consecutive sends are
+            # spaced at ~_UPLOAD_TARGET_INTERVAL_S. Only sleeps when
+            # we're *ahead* of target; slow hardware that can't keep
+            # up just falls through. First frame goes immediately
+            # (last_send_wall is None), subsequent frames may wait.
+            if last_send_wall is not None:
+                elapsed = time.perf_counter() - last_send_wall
+                if elapsed < _UPLOAD_TARGET_INTERVAL_S:
+                    await asyncio.sleep(_UPLOAD_TARGET_INTERVAL_S - elapsed)
+
             try:
                 await websocket.send_json(
                     _detection_result(
@@ -400,6 +478,9 @@ async def _process_upload(
                 # on a routine exit.
                 logger.info("process_upload: client disconnected mid-clip")
                 return
+
+            last_send_wall = time.perf_counter()
+            processed_count += 1
 
             for event in events:
                 try:
@@ -439,9 +520,10 @@ async def _process_upload(
             )
             return
         logger.info(
-            "process_upload: done video=%s frames=%d alerts=%d",
+            "process_upload: done video=%s frames_scanned=%d frames_processed=%d alerts=%d",
             video_path.name,
             frame_idx,
+            processed_count,
             alerts_created,
         )
     finally:

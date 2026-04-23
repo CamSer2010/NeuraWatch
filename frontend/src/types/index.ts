@@ -258,11 +258,15 @@ export const initialAppState: AppState = {
   uploadPredictions: [],
 }
 
-/** Upper bound on `state.uploadPredictions.length`. 200 frames at a
- * server processing rate of 10 FPS = ~20s of buffered overlays —
- * far beyond what a smooth rAF playback needs, cheap for the
- * overlay-pick binary search. */
-export const UPLOAD_BUFFER_MAX = 200
+/** Upper bound on `state.uploadPredictions.length`. 3000 entries at
+ * the server's 10 FPS target processing rate = ~5 minutes of
+ * buffered overlays. An earlier cap of 200 caused the first slice
+ * of long videos to lose overlays after processing finished: the
+ * ring buffer wrapped past pts values the operator hadn't scrubbed
+ * back to yet. Binary-searching a 3000-element array is still
+ * microseconds per rAF tick, and memory cost is ~200 KB (Detection
+ * arrays are small), so the generous cap is free at demo scale. */
+export const UPLOAD_BUFFER_MAX = 3000
 
 /** Upper bound on `state.alerts.length` to keep the working set
  * finite across long sessions. Matches the NW-1404 AC's "last 20
