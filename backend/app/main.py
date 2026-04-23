@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from .api.health import router as health_router
 from .api.routes_alerts import router as alerts_router
 from .api.routes_session import router as session_router
+from .api.routes_upload import router as upload_router
 from .api.routes_ws import router as ws_router
 from .config import get_settings
 from .db import init_db, open_db
@@ -80,6 +81,10 @@ async def lifespan(app: FastAPI):
     # the handler) mirrors the routes_alerts pattern and keeps tests
     # from having to clear the lru_cache on settings overrides.
     app.state.frames_dir = settings.frames_dir
+    # NW-1202: same pattern for the WS upload processing loop — it
+    # opens files from here by video_id and must see the real dir.
+    app.state.uploads_dir = settings.uploads_dir
+    app.state.max_upload_size_mb = settings.max_upload_size_mb
 
     try:
         yield
@@ -114,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
     app.include_router(alerts_router)
     app.include_router(session_router)
+    app.include_router(upload_router)
 
     # NW-1403: serve saved event frames at /frames/{filename}. The
     # `directory=` arg pins StaticFiles to `backend/storage/frames/` —

@@ -1,56 +1,67 @@
-"""WebSocket endpoint for live frame processing (NW-1203).
+"""WebSocket endpoint for live frame processing (NW-1203 + NW-1202).
 
 Protocol (mirrors `frontend/design-specs/README.md` §6):
 
   Client → Server:
     Text   {"type":"frame_meta","seq":<int>,"mode":"webcam"|"upload"}
     Binary JPEG frame bytes.
-    (NW-1301 adds "zone_update"; NW-1405 adds a "reset" signal.)
+    Text   {"type":"zone_update","points":[[x,y],...],"zone_version":<int>}
+    Text   {"type":"zone_clear","zone_version":<int>}
+    Text   {"type":"process_upload","video_id":"<hex>"}   (NW-1202)
 
   Server → Client:
     Text   {
       "type":"detection_result",
-      "seq": <int>,               # echoes the inbound frame_meta seq
-      "mode": "webcam" | "upload",# echoes the inbound frame_meta mode
+      "seq": <int>,               # echoes the inbound frame_meta seq;
+                                  # in upload mode, mirrors frame_idx
+      "mode": "webcam" | "upload",
       "detections":[
         {"class":"person","bbox":[x1,y1,x2,y2],"confidence":0.9,"track_id":1}
       ],
-      "events": [                 # NW-1303; one entry per boundary crossing this frame
+      "events": [                 # NW-1303; one entry per boundary crossing
         {"track_id":1,"object_class":"person","event_type":"enter",
          "timestamp":"2026-04-22T18:33:07.123456+00:00",
          "alert_id":"a3f1c2..."}
       ],
-      "zone_version": 0,          # NW-1301 populates
-      "stats": {
-        "fps": 12.3,
-        "inference_ms": 45.2,     # backend submit -> resolve time
-        "roundtrip_ms": 45.2      # alias for demo narration clarity
-      }
-      # Reserved for NW-1202 upload mode; currently absent:
-      # "pts_ms": <int>           # source-video timestamp in ms
+      "zone_version": 0,
+      "stats": {"fps":12.3, "inference_ms":45.2, "roundtrip_ms":45.2}
+      # NW-1202 upload mode only:
+      # "pts_ms":    <int>        # source-video timestamp in ms
+      # "frame_idx": <int>        # 0-based position in the source video
     }
 
-    Text   {"type":"frame_dropped","seq":<int>}
-      Emitted when a submission was superseded in the size-1 queue
-      (FrameProcessor latest-wins). Lets the client clear `inFlight`
-      without waiting for its 2s watchdog.
+    Text   {"type":"frame_dropped","seq":<int>}           (webcam only)
 
-    # Reserved (NW-1202):
-    # Text   {"type":"processing_complete","total_frames":<int>}
+    Text   {"type":"processing_complete","total_frames":<int>,
+             "alerts_created":<int>}                      (NW-1202)
 
 Close codes:
   1000  Normal closure
   1011  Internal error
   4409  Session conflict (another WS already owns the tracker)
 
-The handler composes three NW-1104 primitives:
-  - `app.state.inference_service.claim_session` to enforce one active
-    connection (ByteTrack state otherwise interleaves and breaks tracks).
-  - `app.state.frame_processor.submit` for size-1 queue + latest-wins
-    cancellation.
-  - `release_session` runs on **every exit path where claim succeeded**.
-    The 4409 refusal path early-returns BEFORE the try/finally so
-    `release_session` is correctly NOT called then.
+NW-1202 Architecture (intentional deviation from AC phrasing —
+PO-directed 2026-04-23):
+  - Client uploads file via `POST /upload`, gets back `{video_id,...}`
+  - Client plays the file locally via `URL.createObjectURL(file)` —
+    no server-side static serving
+  - Client sends `process_upload{video_id}` over this WS
+  - Server opens `uploads_dir/{video_id}.mp4` with cv2, iterates frames
+    exhaustively (no latest-wins — every frame matters for upload),
+    runs inference inline via `inference_service.process_frame` off
+    the event loop (`asyncio.to_thread`), emits detection_result with
+    `pts_ms` + `frame_idx` per frame
+  - Client buffers predictions keyed by pts_ms and matches them to
+    `<video>.currentTime` on its rAF tick (smooth playback with
+    overlay sync, no video seeking)
+  - Server emits `processing_complete` sentinel on EOF
+
+Processing-task lifecycle:
+  - Starting a second `process_upload` while one is in flight
+    cancels the first
+  - Client disconnect cancels the task from the `finally` block
+  - Tasks never outlive the WS — `release_session` waits for
+    cancellation to propagate before returning
 """
 from __future__ import annotations
 
@@ -60,6 +71,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -118,11 +130,20 @@ class ZoneClearMsg:
 
 
 @dataclass
+class ProcessUploadMsg:
+    """NW-1202: kick off server-side video processing for a prior upload."""
+
+    video_id: str
+
+
+@dataclass
 class IgnoredMsg:
     reason: str
 
 
-ClientMsg = FrameMetaMsg | ZoneUpdateMsg | ZoneClearMsg | IgnoredMsg
+ClientMsg = (
+    FrameMetaMsg | ZoneUpdateMsg | ZoneClearMsg | ProcessUploadMsg | IgnoredMsg
+)
 
 
 def _parse_text_message(text: str) -> ClientMsg:
@@ -171,6 +192,20 @@ def _parse_text_message(text: str) -> ClientMsg:
             return IgnoredMsg("invalid zone_version on zone_clear")
         return ZoneClearMsg(zone_version=zone_version)
 
+    if msg_type == "process_upload":
+        # NW-1202: video_id is the uuid4 hex returned by POST /upload.
+        # Guard against path-traversal attempts here (reject anything
+        # non-hex) — the processor trusts this field for filesystem
+        # reads and the FE has no reason to ever send anything else.
+        video_id = parsed.get("video_id", "")
+        if (
+            not isinstance(video_id, str)
+            or not video_id
+            or not all(c in "0123456789abcdef" for c in video_id)
+        ):
+            return IgnoredMsg("invalid or missing video_id on process_upload")
+        return ProcessUploadMsg(video_id=video_id)
+
     return IgnoredMsg(f"unknown type {msg_type!r}")
 
 
@@ -211,8 +246,11 @@ def _detection_result(
     roundtrip_ms: float,
     zone_version: int,
     events: list[ZoneEvent],
+    *,
+    pts_ms: int | None = None,
+    frame_idx: int | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload: dict[str, Any] = {
         "type": "detection_result",
         "seq": seq,
         "mode": mode,
@@ -229,10 +267,185 @@ def _detection_result(
             "roundtrip_ms": round(roundtrip_ms, 2),
         },
     }
+    # NW-1202 upload fields land only on upload-mode frames; webcam
+    # payloads keep the tighter shape so the wire diff is minimal
+    # for consumers that never encounter upload mode.
+    if pts_ms is not None:
+        payload["pts_ms"] = pts_ms
+    if frame_idx is not None:
+        payload["frame_idx"] = frame_idx
+    return payload
 
 
 def _frame_dropped(seq: int) -> dict[str, Any]:
     return {"type": "frame_dropped", "seq": seq}
+
+
+def _processing_complete(total_frames: int, alerts_created: int) -> dict[str, Any]:
+    return {
+        "type": "processing_complete",
+        "total_frames": total_frames,
+        "alerts_created": alerts_created,
+    }
+
+
+# ---- Upload processing (NW-1202) --------------------------------------
+
+async def _process_upload(
+    websocket: WebSocket,
+    video_path: Path,
+    inference_service: Any,
+    zone_service: ZoneService,
+    alert_service: AlertService,
+    snapshot_service: SnapshotService,
+    db: Any,
+    pending_snapshots: set[asyncio.Task[Any]],
+) -> None:
+    """Read the uploaded video end-to-end, emit detection_result per
+    frame, emit processing_complete on EOF.
+
+    Runs as an asyncio task so the WS receive loop stays responsive
+    to zone_update / zone_clear / session interruption while
+    processing is in progress. cv2 calls are threaded to keep the
+    event loop clean.
+
+    Cancellation: raising CancelledError mid-loop is expected — the
+    finally drops the cv2 handle cleanly. The caller (either a new
+    process_upload arriving or the WS finally block) owns the
+    decision to cancel.
+    """
+    cap = await asyncio.to_thread(cv2.VideoCapture, str(video_path))
+    try:
+        if not cap.isOpened():
+            logger.warning(
+                "process_upload: cv2 could not open %s; aborting", video_path
+            )
+            return
+
+        # Hoist out of the hot loop — FPS is container-level metadata
+        # that doesn't change frame-to-frame. cv2.CAP_PROP_FPS is FFI-
+        # synchronous, so running it per-frame is a small but needless
+        # cost on a 30s clip.
+        source_fps = await asyncio.to_thread(cap.get, cv2.CAP_PROP_FPS)
+        if source_fps is None or source_fps <= 0:
+            source_fps = 0.0
+
+        frame_idx = 0
+        alerts_created = 0
+        fps_ema = 0.0
+        last_tick: float | None = None
+
+        while True:
+            ok, frame = await asyncio.to_thread(cap.read)
+            if not ok or frame is None:
+                break
+
+            # Back-compute pts from frame_idx / source_fps rather than
+            # reading CAP_PROP_POS_MSEC (which points to the NEXT
+            # frame after a read, not the one we just got). Fallback
+            # to a 10fps guess if the container reported no FPS.
+            pts_ms = (
+                int(round(frame_idx * 1000.0 / source_fps))
+                if source_fps > 0
+                else frame_idx * 100
+            )
+
+            t0 = time.perf_counter()
+            detections = await asyncio.to_thread(
+                inference_service.process_frame, frame
+            )
+            roundtrip_ms = (time.perf_counter() - t0) * 1000.0
+
+            # Processing FPS EMA — not per-frame FPS but per-second
+            # throughput. Useful for demo narration ("processed at 8
+            # FPS") and for the FE's StatusBadge.
+            now = time.perf_counter()
+            if last_tick is not None:
+                dt = now - last_tick
+                if dt > 0:
+                    instant = 1.0 / dt
+                    fps_ema = (
+                        instant
+                        if fps_ema == 0.0
+                        else _FPS_EMA_ALPHA * instant
+                        + (1.0 - _FPS_EMA_ALPHA) * fps_ema
+                    )
+            last_tick = now
+
+            in_zone_flags = zone_service.evaluate(detections)
+            events = alert_service.process_frame(detections, in_zone_flags)
+            alerts_created += len(events)
+
+            try:
+                await websocket.send_json(
+                    _detection_result(
+                        # `seq` field mirrors frame_idx in upload mode
+                        # so clients that rely on monotonic seq (the
+                        # NW-1203 stale-drop guard) keep working.
+                        frame_idx,
+                        "upload",
+                        detections,
+                        fps_ema,
+                        roundtrip_ms,
+                        zone_service.zone_version,
+                        events,
+                        pts_ms=pts_ms,
+                        frame_idx=frame_idx,
+                    )
+                )
+            except WebSocketDisconnect:
+                # Normal mid-clip disconnect (operator closed the
+                # tab, hit Reset Demo, switched source). Swallow so
+                # the outer handler's `logger.exception` doesn't fire
+                # on a routine exit.
+                logger.info("process_upload: client disconnected mid-clip")
+                return
+
+            for event in events:
+                try:
+                    await insert_alert(
+                        db,
+                        alert_id=event.alert_id,
+                        timestamp=event.timestamp,
+                        track_id=event.track_id,
+                        object_class=event.object_class,
+                        event_type=event.event_type,
+                    )
+                except Exception:
+                    logger.exception(
+                        "process_upload: insert_alert failed for alert_id=%s",
+                        event.alert_id,
+                    )
+                    continue
+                task = asyncio.create_task(
+                    snapshot_service.save_if_new(frame, event)
+                )
+                pending_snapshots.add(task)
+                task.add_done_callback(pending_snapshots.discard)
+
+            frame_idx += 1
+
+        # Reached EOF cleanly — let the FE flip to idle + show the
+        # `upload-complete` banner.
+        try:
+            await websocket.send_json(
+                _processing_complete(
+                    total_frames=frame_idx, alerts_created=alerts_created
+                )
+            )
+        except WebSocketDisconnect:
+            logger.info(
+                "process_upload: client disconnected before completion ack"
+            )
+            return
+        logger.info(
+            "process_upload: done video=%s frames=%d alerts=%d",
+            video_path.name,
+            frame_idx,
+            alerts_created,
+        )
+    finally:
+        await asyncio.to_thread(cap.release)
 
 
 # ---- WebSocket handler -------------------------------------------------
@@ -287,6 +500,13 @@ async def detect_ws(websocket: WebSocket) -> None:
     # occasionally truncates the JPEG on disk.
     pending_snapshots: set[asyncio.Task[Any]] = set()
 
+    # NW-1202: the server-side upload processing task. At most one
+    # per connection — a second process_upload cancels the first.
+    # Held as a handle so the finally block can cancel-and-await on
+    # disconnect, which prevents orphan cv2 handles from outliving
+    # the WS.
+    process_task: asyncio.Task[None] | None = None
+
     try:
         while True:
             msg = await websocket.receive()
@@ -316,6 +536,47 @@ async def detect_ws(websocket: WebSocket) -> None:
                     zone_service.clear_zone(parsed.zone_version)
                     alert_service.reset_state()
                     snapshot_service.reset()
+                elif isinstance(parsed, ProcessUploadMsg):
+                    # NW-1202: kick off (or restart) the processing
+                    # task. A second process_upload mid-flight cancels
+                    # the first — matches the "latest-wins" spirit of
+                    # the webcam path without the size-1 queue.
+                    if process_task is not None and not process_task.done():
+                        process_task.cancel()
+                        try:
+                            await process_task
+                        except (asyncio.CancelledError, Exception):
+                            # CancelledError is the expected path;
+                            # unexpected exceptions from the prior
+                            # task are already logged inside it.
+                            pass
+                    uploads_dir: Path = websocket.app.state.uploads_dir
+                    video_path = uploads_dir / f"{parsed.video_id}.mp4"
+                    if not video_path.exists():
+                        logger.warning(
+                            "WS: process_upload for unknown video_id=%s",
+                            parsed.video_id,
+                        )
+                        continue
+                    # Tracker state from the previous clip (or webcam
+                    # session) must NOT bleed into this one — track IDs
+                    # would keep incrementing off the old high-water
+                    # mark, confusing the FE dedup + the alerts list.
+                    inference_service.reset_tracker()
+                    alert_service.reset_state()
+                    snapshot_service.reset()
+                    process_task = asyncio.create_task(
+                        _process_upload(
+                            websocket=websocket,
+                            video_path=video_path,
+                            inference_service=inference_service,
+                            zone_service=zone_service,
+                            alert_service=alert_service,
+                            snapshot_service=snapshot_service,
+                            db=db,
+                            pending_snapshots=pending_snapshots,
+                        )
+                    )
                 elif isinstance(parsed, IgnoredMsg):
                     logger.debug("WS: ignored text (%s)", parsed.reason)
                 continue
@@ -448,6 +709,18 @@ async def detect_ws(websocket: WebSocket) -> None:
             # Already closed; nothing more to do.
             pass
     finally:
+        # NW-1202: cancel the upload processing task FIRST so its
+        # in-flight cv2.to_thread reads don't race with session
+        # teardown. Awaiting the cancelled task returns once the
+        # cancellation has actually propagated through to_thread.
+        if process_task is not None and not process_task.done():
+            process_task.cancel()
+            try:
+                await process_task
+            except (asyncio.CancelledError, Exception):
+                # Cancellation is expected; any other exception is
+                # already logged inside _process_upload's loop.
+                pass
         # Drain in-flight snapshot tasks before releasing the session.
         # `return_exceptions=True` keeps one broken task from blocking
         # the rest and ensures the session release always runs.
