@@ -28,7 +28,13 @@
  *   - Stale responses (seq <= lastSeq) dropped.
  */
 
-import type { Action, Detection, DetectionResult, ObjectClass } from '../types'
+import type {
+  Action,
+  Detection,
+  DetectionResult,
+  ObjectClass,
+  ZoneEventWire,
+} from '../types'
 
 type Dispatch = (action: Action) => void
 type Mode = 'webcam' | 'upload'
@@ -189,7 +195,10 @@ function _open(): void {
           confidence: number
           track_id: number | null
         }>
-        events: unknown[]
+        // NW-1303 wire shape: server sends field names already in
+        // our consumer-friendly form (no Python-reserved-word rename
+        // to deal with, unlike detections' `class` → `objectClass`).
+        events: ZoneEventWire[]
         zone_version: number
         stats: { fps: number; inference_ms: number; roundtrip_ms?: number }
       }
