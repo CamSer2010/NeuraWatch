@@ -103,18 +103,49 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
     return () => clearInterval(id)
   }, [phase, uploaded])
 
-  // When an uploaded video is loaded, start playing it. Paused
-  // playback would still let the overlay buffer match pts_ms = 0,
-  // but operators expect autoplay after they click "Upload & process".
-  // Muted is required by autoplay policies in every modern browser.
+  // Autoplay — DELIBERATELY GATED on a server head-start (NW-1202
+  // follow-up, 2026-04-23).
+  //
+  // The naïve "play as soon as upload/success lands" approach let
+  // `video.currentTime` race ahead of the server's first
+  // detection_result (the WS handshake + first inference costs
+  // ~400-800 ms). Because the server's wall-clock throttle keeps
+  // processing at exactly 1× real-time, the buffer stays
+  // permanently behind currentTime by that startup delta — the FE
+  // falls into `_interpolateDetections`'s sticky-last branch and
+  // overlays visibly lag moving objects by whatever the startup gap
+  // was. Pausing the video lets the buffer accumulate ahead of
+  // currentTime, and resuming from there looks synced — which is
+  // exactly what the operator reported as the repro.
+  //
+  // Fix: wait for a prediction buffer head-start before calling
+  // play(). ~10 entries at the 10 FPS server rate = ~1 s of runway.
+  // After that the buffer stays ahead of currentTime because
+  // processing == playback speed (1× real-time via the throttle).
+  //
+  // Fire-once-per-upload via a ref keyed on video_id so manual
+  // pause/resume (built-in video controls) doesn't re-trigger the
+  // autoplay after the user has taken control.
+  const PLAY_HEAD_START_PREDICTIONS = 10
+  const autoPlayedForRef = useRef<string | null>(null)
   useEffect(() => {
     const v = videoRef.current
     if (v === null || uploaded === null) return
     v.muted = true
-    // `play()` is async and can reject on autoplay-blocked — we swallow
-    // because the user can click the built-in video controls to resume.
+    if (autoPlayedForRef.current === uploaded.metadata.video_id) return
+    if (state.uploadPredictions.length < PLAY_HEAD_START_PREDICTIONS) return
+    // Defensive: if the user beat us to the native play control,
+    // don't fire a redundant play(). Harmless on a playing element
+    // (returns a resolved promise) but makes the skip-intent explicit.
+    if (!v.paused) {
+      autoPlayedForRef.current = uploaded.metadata.video_id
+      return
+    }
+    autoPlayedForRef.current = uploaded.metadata.video_id
+    // `play()` is async; reject on autoplay-blocked is swallowed so
+    // the operator can still click the built-in video control.
     void v.play().catch(() => undefined)
-  }, [uploaded])
+  }, [uploaded, state.uploadPredictions.length])
 
   // Unmount safety net: if the component tears down without going
   // through `session/reset` or `source/set` (e.g. hot-reload, parent
@@ -155,22 +186,23 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
   }
 
   const handleReprocess = () => {
-    // Seek the video back to the start and start playback. `play()`
-    // can reject on autoplay-blocked state; the muted attribute
-    // keeps this a non-issue on every modern browser, but we still
-    // swallow so a failed seek doesn't turn into an unhandled
-    // rejection.
+    // Pause + rewind, but deliberately DO NOT call play() here.
+    // Playing immediately would reintroduce the startup-lag bug
+    // (video racing ahead of the server's first re-processing
+    // frame). Resetting the head-start guard lets the gated
+    // autoplay effect re-engage as soon as the buffer re-fills
+    // to PLAY_HEAD_START_PREDICTIONS.
     const v = videoRef.current
     if (v !== null) {
       try {
+        v.pause()
         v.currentTime = 0
       } catch {
-        // Some browsers throw if the video metadata isn't loaded
-        // yet; rare at this point in the flow because the first
-        // play() already happened. Safe to ignore.
+        // Some browsers throw if metadata isn't loaded yet; rare
+        // at this point since the first play already happened.
       }
-      void v.play().catch(() => undefined)
     }
+    autoPlayedForRef.current = null
     // Reducer wipes the prediction buffer + flips phase to 'ready'.
     // The sender effect (phase==='ready') then re-fires
     // `process_upload` on the still-open WS, which the server

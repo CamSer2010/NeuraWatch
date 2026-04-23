@@ -273,19 +273,20 @@ export function LiveFeedCanvas({
       }
 
       // --- Detection layer (drawn OVER the polygon) ---------------
-      // NW-1202: upload mode picks detections from the pts_ms-keyed
-      // buffer by matching the video element's currentTime. Falls
-      // back gracefully — empty array — when the buffer is empty or
-      // the video is ahead of the server's processing pace. (When the
-      // video is behind any buffered frame, we pick the latest one
-      // whose pts_ms is still ≤ currentTime.)
+      // NW-1202: upload mode computes detections from the pts_ms-
+      // keyed buffer by interpolating between the two predictions
+      // that bracket video.currentTime. With a 10 FPS server, a
+      // last-match approach left bboxes static for 100 ms windows
+      // and visibly lagged behind fast-moving objects. Linear
+      // interpolation keyed on track_id gives smooth 60 FPS motion
+      // even though the server only emits 10 samples/second.
       let renderDetections = detectionsRef.current
       if (uploadMode) {
         const vid = videoRef?.current ?? null
         const buf = uploadPredictionsRef.current
         if (vid !== null && buf.length > 0) {
           const ptsMs = vid.currentTime * 1000
-          renderDetections = _pickPrediction(buf, ptsMs)
+          renderDetections = _interpolateDetections(buf, ptsMs)
         } else {
           renderDetections = []
         }
@@ -445,31 +446,41 @@ function clamp01(v: number): number {
 }
 
 /**
- * NW-1202: find the buffered prediction to draw for a given video
- * currentTime. Picks the entry with the largest `pts_ms` that is
- * still ≤ the requested value (the most recent frame the server
- * processed up to this point in playback). When the video has
- * overtaken the buffer (server falling behind), returns the latest
- * buffered detections so bboxes "stick" rather than flicker off.
- * When the video is before all buffered entries (user seeked
- * backward past the buffer horizon), returns an empty list — we'd
- * rather show nothing than lie with wrong positions.
+ * NW-1202: produce the detections to draw at a given video pts by
+ * interpolating between the two buffered predictions that bracket
+ * it. Server emits at ~10 FPS; without interpolation, rAF's 60 FPS
+ * rendering would show bboxes static for 100 ms windows and visibly
+ * trail moving objects. With interpolation, bboxes glide smoothly
+ * between server-known positions, matched by `track_id` so each
+ * tracked object gets its own lerp.
  *
- * Binary search because the buffer can hold up to 200 entries and
- * this runs every rAF tick (~60/s).
+ * Edge cases:
+ *  - Buffer empty or `ptsMs < buf[0].pts_ms`: no overlay. We'd
+ *    rather show nothing than lie about where the object is.
+ *  - `ptsMs >= last.pts_ms`: video playback is ahead of the server's
+ *    processed horizon. Stick to the last prediction — bboxes
+ *    "freeze" on the most recent known positions rather than
+ *    flicker off. This only happens on slow hardware where
+ *    inference can't keep up with the 10 FPS target.
+ *  - Untracked detections (`track_id === null`): these can't be
+ *    matched across frames, so they show on the nearer side of the
+ *    interpolation window (t < 0.5 → frame A, else → frame B).
+ *    Confidence and class stay stable per track, so only bbox +
+ *    confidence need lerping.
+ *
+ * Binary search is O(log n) on a ~3000-entry buffer — microseconds
+ * per rAF tick, no concern at demo scale.
  */
-function _pickPrediction(
+function _interpolateDetections(
   buf: PredictionFrame[],
   ptsMs: number,
 ): Detection[] {
   if (buf.length === 0) return []
-  // Fast path: most common case is that ptsMs is just past the last
-  // entry (playback smoothly ahead of server processing).
   const last = buf[buf.length - 1]
   if (ptsMs >= last.pts_ms) return last.detections
-  // Video is before the earliest buffered frame — no safe overlay.
   if (ptsMs < buf[0].pts_ms) return []
-  // Binary search for largest pts_ms ≤ target.
+
+  // Largest index whose pts_ms ≤ target.
   let lo = 0
   let hi = buf.length - 1
   while (lo < hi) {
@@ -477,7 +488,56 @@ function _pickPrediction(
     if (buf[mid].pts_ms <= ptsMs) lo = mid
     else hi = mid - 1
   }
-  return buf[lo].detections
+  const a = buf[lo]
+  // If we're at or past the final entry, there's nothing to
+  // interpolate toward — just use its positions.
+  if (lo + 1 >= buf.length) return a.detections
+  const b = buf[lo + 1]
+  const span = b.pts_ms - a.pts_ms
+  if (span <= 0) return a.detections
+  const t = (ptsMs - a.pts_ms) / span // 0 at a, 1 at b
+
+  // Index b's detections by track_id for O(1) pairing.
+  const bByTrack = new Map<number, Detection>()
+  for (const d of b.detections) {
+    if (d.track_id !== null) bByTrack.set(d.track_id, d)
+  }
+
+  const out: Detection[] = []
+  for (const da of a.detections) {
+    if (da.track_id === null) {
+      // Can't pair — show on the nearer side.
+      if (t < 0.5) out.push(da)
+      continue
+    }
+    const db = bByTrack.get(da.track_id)
+    if (db === undefined) {
+      // Track disappears in b — fade out by only showing if we're
+      // still in the first half of the interpolation window.
+      if (t < 0.5) out.push(da)
+      continue
+    }
+    bByTrack.delete(da.track_id) // consumed; remainder added below
+    out.push({
+      objectClass: da.objectClass,
+      bbox: [
+        da.bbox[0] + (db.bbox[0] - da.bbox[0]) * t,
+        da.bbox[1] + (db.bbox[1] - da.bbox[1]) * t,
+        da.bbox[2] + (db.bbox[2] - da.bbox[2]) * t,
+        da.bbox[3] + (db.bbox[3] - da.bbox[3]) * t,
+      ],
+      confidence: da.confidence + (db.confidence - da.confidence) * t,
+      track_id: da.track_id,
+    })
+  }
+
+  // Track_ids only in b (new object appearing) — show on nearer
+  // side, mirroring the fade-out logic for disappearing tracks.
+  for (const db of bByTrack.values()) {
+    if (t >= 0.5) out.push(db)
+  }
+
+  return out
 }
 
 function summarizeForAria(detections: Detection[]): string {
