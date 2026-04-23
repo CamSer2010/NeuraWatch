@@ -20,6 +20,17 @@
   min-height: 0;
 }
 
+/* NW-1202: left column wraps the VideoSourcePanel segmented control
+ * above whichever source view is active (WebcamView / VideoUploadView).
+ * Both share the 4:3 stage dimensions, so the column width is driven
+ * by `--capture-w`. */
+.app__source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  align-items: flex-start;
+}
+
 /* On narrow viewports (<900 px) let the alerts panel stack under
  * the webcam view. Design-specs treats this as an "alerts collapse
  * to drawer" scenario at 900–1199 px; for MVP we just stack so the

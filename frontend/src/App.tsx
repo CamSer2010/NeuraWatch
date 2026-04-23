@@ -2,6 +2,8 @@ import { useEffect, useReducer } from 'react'
 
 import { AlertsPanel } from './components/AlertsPanel'
 import { StatusBar } from './components/StatusBar'
+import { VideoSourcePanel } from './components/VideoSourcePanel'
+import { VideoUploadView } from './components/VideoUploadView'
 import { WebcamView } from './components/WebcamView'
 import { fetchRecentAlerts } from './services/alertsClient'
 import { appReducer, initialAppState } from './types'
@@ -40,8 +42,26 @@ export function App() {
         cameraActive={state.cameraActive}
       />
       <main className="app__main">
-        {/* NW-1202 VideoSourceSelector lands to the left of WebcamView. */}
-        <WebcamView state={state} dispatch={dispatch} />
+        <div className="app__source">
+          <VideoSourcePanel
+            source={state.videoSource}
+            dispatch={dispatch}
+            // Don't let a mid-upload toggle tear down state. Also
+            // blocked mid-webcam once cameraActive is true — the
+            // operator should stop the webcam first to avoid a
+            // silent MediaStream leak.
+            disabled={
+              state.uploadPhase === 'uploading' ||
+              state.uploadPhase === 'processing' ||
+              state.cameraActive
+            }
+          />
+          {state.videoSource === 'webcam' ? (
+            <WebcamView state={state} dispatch={dispatch} />
+          ) : (
+            <VideoUploadView state={state} dispatch={dispatch} />
+          )}
+        </div>
         <AlertsPanel
           alerts={state.alerts}
           selectedAlertId={state.selectedAlertId}

@@ -100,6 +100,30 @@ export interface DetectionResult {
   events: ZoneEventWire[]   // NW-1303 populates
   zone_version: number      // NW-1301 populates
   stats: DetectionStats
+  // NW-1202: upload-mode frames carry the source-video timestamp
+  // and zero-based frame index. Absent on webcam frames — clients
+  // that only handle webcam can ignore these fields.
+  pts_ms?: number
+  frame_idx?: number
+}
+
+/** NW-1202: metadata returned by POST /upload. */
+export interface UploadMetadata {
+  video_id: string
+  source_fps: number
+  duration_sec: number
+  width: number
+  height: number
+  processed_fps: number
+  total_frames: number
+}
+
+/** NW-1202: sentinel pushed on `{type:"processing_complete"}`.
+ * Server stops emitting detection_result after this. */
+export interface ProcessingComplete {
+  type: 'processing_complete'
+  total_frames: number
+  alerts_created: number
 }
 
 export interface AppState {
@@ -155,6 +179,61 @@ export interface AppState {
   zonePoints: Point[]
   zoneClosed: boolean
   zoneVersion: number
+
+  // --- Video source + upload (NW-1202) ---
+  //
+  // `videoSource` drives which surface is active in the left column —
+  // WebcamView when 'webcam', VideoUploadView when 'upload'. Defaults
+  // to 'webcam' on boot to preserve the NW-1201 flow for operators
+  // who never touch the selector.
+  //
+  // `uploadedVideo` holds the metadata the server returned + the
+  // client-side blob URL the `<video>` element plays from (Option 1
+  // architecture — no server-side static serving). Null before an
+  // upload succeeds; cleared on session/reset or source switch.
+  //
+  // `uploadPhase` tracks the upload/processing lifecycle independent
+  // of top-level status: 'idle' → 'uploading' → 'ready' (server
+  // acked + processing started) → 'complete' (server emitted
+  // processing_complete). Separate from `status` because status
+  // already maps to badge color and we want the banner-level
+  // 'upload-in-progress' / 'upload-complete' states from spec §System
+  // States without overloading the main state machine.
+  videoSource: VideoSource
+  uploadedVideo: UploadedVideo | null
+  uploadPhase: UploadPhase
+  uploadError: string | null
+
+  /** NW-1202: prediction buffer keyed by pts_ms. LiveFeedCanvas
+   * matches the latest entry ≤ `<video>.currentTime * 1000` on
+   * each rAF tick to render overlays in sync with smooth client-
+   * side playback. Bounded to `UPLOAD_BUFFER_MAX` so long clips
+   * don't grow unbounded. Empty in webcam mode. */
+  uploadPredictions: PredictionFrame[]
+}
+
+/** One server-emitted detection_result retained in the prediction
+ * buffer. Same fields as DetectionResult minus the bookkeeping we
+ * don't need for overlay rendering. */
+export interface PredictionFrame {
+  pts_ms: number
+  frame_idx: number
+  detections: Detection[]
+}
+
+export type VideoSource = 'webcam' | 'upload'
+export type UploadPhase =
+  | 'idle'        // No upload in progress
+  | 'uploading'   // POST /upload in flight
+  | 'ready'       // Server has the file + metadata; processing is starting
+  | 'processing'  // Server is streaming detection_result frames
+  | 'complete'    // Server emitted processing_complete
+
+export interface UploadedVideo {
+  metadata: UploadMetadata
+  /** `URL.createObjectURL(file)` — must be revoked on reset / new
+   * upload to avoid leaking memory across long demo sessions. */
+  blobUrl: string
 }
 
 export const initialAppState: AppState = {
@@ -172,7 +251,22 @@ export const initialAppState: AppState = {
   zoneVersion: 0,
   alerts: [],
   selectedAlertId: null,
+  videoSource: 'webcam',
+  uploadedVideo: null,
+  uploadPhase: 'idle',
+  uploadError: null,
+  uploadPredictions: [],
 }
+
+/** Upper bound on `state.uploadPredictions.length`. 3000 entries at
+ * the server's 10 FPS target processing rate = ~5 minutes of
+ * buffered overlays. An earlier cap of 200 caused the first slice
+ * of long videos to lose overlays after processing finished: the
+ * ring buffer wrapped past pts values the operator hadn't scrubbed
+ * back to yet. Binary-searching a 3000-element array is still
+ * microseconds per rAF tick, and memory cost is ~200 KB (Detection
+ * arrays are small), so the generous cap is free at demo scale. */
+export const UPLOAD_BUFFER_MAX = 3000
 
 /** Upper bound on `state.alerts.length` to keep the working set
  * finite across long sessions. Matches the NW-1404 AC's "last 20
@@ -214,6 +308,15 @@ export type Action =
   | { type: 'alerts/select'; alertId: string | null }
   | { type: 'alerts/clear-new'; alertIds: string[] }
   | { type: 'session/reset' }
+  // NW-1202 upload lifecycle. No explicit 'upload/processing' action
+  // — the ready → processing transition is derived inside `ws/frame`
+  // when the first upload-mode detection_result lands (see reducer).
+  | { type: 'source/set'; source: VideoSource }
+  | { type: 'upload/start' }
+  | { type: 'upload/success'; video: UploadedVideo }
+  | { type: 'upload/error'; message: string }
+  | { type: 'upload/complete'; totalFrames: number; alertsCreated: number }
+  | { type: 'upload/restart' }
 
 export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -330,17 +433,59 @@ export function appReducer(state: AppState, action: Action): AppState {
         incoming.length > 0
           ? [...incoming, ...state.alerts].slice(0, ALERTS_MAX)
           : state.alerts
+
+      // NW-1202: in upload mode, frames carry pts_ms and detections
+      // go into the prediction buffer instead of `state.detections`.
+      // LiveFeedCanvas picks the matching entry on each rAF tick
+      // keyed by `<video>.currentTime`, so `state.detections` would
+      // show a stale-most-recent overlay that doesn't match playback.
+      const isUpload =
+        action.payload.mode === 'upload' &&
+        typeof action.payload.pts_ms === 'number' &&
+        typeof action.payload.frame_idx === 'number'
+
+      const nextPredictions = isUpload
+        ? [
+            ...state.uploadPredictions,
+            {
+              pts_ms: action.payload.pts_ms as number,
+              frame_idx: action.payload.frame_idx as number,
+              detections: action.payload.detections,
+            },
+          ].slice(-UPLOAD_BUFFER_MAX)
+        : state.uploadPredictions
+
+      // Status + phase transitions depend on mode:
+      //   webcam   — model-loading|disconnected → live; else unchanged
+      //   upload   — flip status → 'processing' + phase → 'processing'
+      //              on the FIRST frame (the 'ready' → 'processing'
+      //              edge). Subsequent frames leave both unchanged.
+      let nextStatus = state.status
+      let nextPhase = state.uploadPhase
+      if (action.payload.mode === 'upload') {
+        if (state.uploadPhase === 'ready') {
+          nextPhase = 'processing'
+          nextStatus = 'processing'
+        }
+      } else {
+        if (
+          state.status === 'model-loading' ||
+          state.status === 'disconnected'
+        ) {
+          nextStatus = 'live'
+        }
+      }
+
       return {
         ...state,
-        status:
-          state.status === 'model-loading' || state.status === 'disconnected'
-            ? 'live'
-            : state.status,
-        detections: action.payload.detections,
+        status: nextStatus,
+        uploadPhase: nextPhase,
+        detections: isUpload ? [] : action.payload.detections,
         stats: action.payload.stats,
         lastZoneVersion: action.payload.zone_version,
         lastEvents: action.payload.events,
         alerts: mergedAlerts,
+        uploadPredictions: nextPredictions,
       }
     }
 
@@ -479,7 +624,133 @@ export function appReducer(state: AppState, action: Action): AppState {
         ),
       }
 
+    case 'source/set': {
+      // NW-1202 + design-specs §Interactions: "Source switching
+      // auto-clears the polygon and bumps zone_version". If the user
+      // is in the middle of drawing, that in-progress sketch also
+      // goes. Revoke any existing uploaded-video blob URL so we
+      // don't leak memory across repeated toggles.
+      if (state.videoSource === action.source) return state
+      if (state.uploadedVideo !== null) {
+        try {
+          URL.revokeObjectURL(state.uploadedVideo.blobUrl)
+        } catch {
+          // Firefox raises on a double-revoke; safe to swallow.
+        }
+      }
+      return {
+        ...state,
+        videoSource: action.source,
+        uploadedVideo: null,
+        uploadPhase: 'idle',
+        uploadError: null,
+        zoneDrawing: false,
+        zonePoints: [],
+        zoneClosed: false,
+        zoneVersion: state.zoneVersion + 1,
+      }
+    }
+
+    case 'upload/start':
+      return {
+        ...state,
+        uploadPhase: 'uploading',
+        uploadError: null,
+      }
+
+    case 'upload/success':
+      // Defensive: revoke any prior blob URL before overwriting.
+      // Today's UI gates the picker on `uploadedVideo === null` so
+      // this reducer path is only reached from a clean `null` —
+      // but the "every blobUrl write revokes the previous one"
+      // invariant should hold at the reducer level, not rely on a
+      // component gate. One-line guard for a future "re-upload
+      // without a source toggle" flow.
+      if (state.uploadedVideo !== null) {
+        try {
+          URL.revokeObjectURL(state.uploadedVideo.blobUrl)
+        } catch {
+          // ignore
+        }
+      }
+      // Server has the file + metadata; caller is expected to send
+      // `process_upload` on the WS immediately after. We mark phase
+      // as 'ready' (distinct from 'processing') so the UI can show
+      // "Upload complete · starting processing…" for the beat
+      // between success and the first detection_result arriving.
+      return {
+        ...state,
+        uploadedVideo: action.video,
+        uploadPhase: 'ready',
+        uploadError: null,
+      }
+
+    case 'upload/error':
+      return {
+        ...state,
+        uploadPhase: 'idle',
+        uploadError: action.message,
+      }
+
+    case 'upload/complete':
+      // Server finished processing. Upload phase flips to 'complete'
+      // (drives the banner); status returns to 'idle'. `<video>`
+      // keeps its blobUrl so the user can scrub back through the
+      // clip with overlays still matching via the prediction buffer.
+      //
+      // If the operator was mid-draw when completion landed, drop
+      // the in-progress sketch — the status badge flipping to
+      // 'idle' while zoneDrawing stayed true surfaced a contextual
+      // mismatch (badge says idle, cursor is still a crosshair).
+      // A committed polygon (`zoneClosed`) survives so alerts land
+      // correctly if the operator scrubs back through the clip.
+      return {
+        ...state,
+        uploadPhase: 'complete',
+        status: 'idle',
+        detections: [],
+        zoneDrawing: false,
+        zonePoints: state.zoneClosed ? state.zonePoints : [],
+      }
+
+    case 'upload/restart':
+      // Re-run processing on the same uploaded clip. Flow:
+      //   1. Clear prediction buffer so stale bboxes from the prior
+      //      run don't bleed into the start of the new one.
+      //   2. Flip phase back to 'ready' so the sender effect in
+      //      VideoUploadView re-fires `process_upload` on the
+      //      existing (still-open) WebSocket.
+      //   3. Set status='processing' immediately for UX continuity —
+      //      the user clicked a "re-run" button, surface that.
+      //   4. Committed polygon survives (operator typically re-runs
+      //      to validate the same zone); in-progress sketches go.
+      //
+      // Alerts from the prior run stay in the panel — server emits
+      // unique alert_ids each time, so dedup-by-alert_id appends new
+      // events instead of overwriting. Operator can tell runs apart
+      // by timestamp. Wiping alerts requires session/reset.
+      if (state.uploadedVideo === null) return state
+      return {
+        ...state,
+        uploadPhase: 'ready',
+        status: 'processing',
+        uploadPredictions: [],
+        detections: [],
+        lastEvents: [],
+        zoneDrawing: false,
+        zonePoints: state.zoneClosed ? state.zonePoints : [],
+      }
+
     case 'session/reset':
+      // NW-1202: revoke the uploaded-video blob URL before the state
+      // forgets it. Idempotent revoke — safe on already-revoked URLs.
+      if (state.uploadedVideo !== null) {
+        try {
+          URL.revokeObjectURL(state.uploadedVideo.blobUrl)
+        } catch {
+          // ignore
+        }
+      }
       // NW-1405: Full wipe. The HTTP handler has already cleared DB
       // rows, unlinked frame JPEGs, and reset the ByteTrack IDs; the
       // reducer mirrors that on the client side so the UI returns to
