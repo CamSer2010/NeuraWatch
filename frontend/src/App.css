@@ -6,12 +6,26 @@
   color: var(--ink-0);
 }
 
+/* 70/30 monitor layout (design-specs §2 Live Monitoring · default).
+ * Feed + controls occupy the flexible left column; AlertsPanel holds
+ * a fixed 360 px right column at target viewports. Below 900 px the
+ * panel can stack vertically — out of NW-1404 scope, flagged in PR. */
 .app__main {
   flex: 1;
   padding: var(--sp-6);
-  /* The ratified 70/30 monitor layout lands in NW-1204/1404. For
-   * NW-1201 the webcam view sits alone, aligned top-left. */
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 360px;
   gap: var(--sp-5);
+  align-items: stretch;
+  min-height: 0;
+}
+
+/* On narrow viewports (<900 px) let the alerts panel stack under
+ * the webcam view. Design-specs treats this as an "alerts collapse
+ * to drawer" scenario at 900–1199 px; for MVP we just stack so the
+ * basic layout doesn't break on laptop 1280-ish widths. */
+@media (max-width: 900px) {
+  .app__main {
+    grid-template-columns: 1fr;
+  }
 }
