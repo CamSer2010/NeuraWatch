@@ -1,34 +1,49 @@
 import type { AnimationEvent, Dispatch } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { fetchAlertById, frameUrl } from '../services/alertsClient'
 import type { Action, Alert } from '../types'
 import './AlertsPanel.css'
 
 /**
- * Alerts side-panel (NW-1404).
+ * Alerts side-panel (NW-1404 + design-fidelity follow-up).
  *
  * Vertical layout inside the 30% right column of the main monitor
  * view: scrollable list on top, selected alert's saved frame +
- * metadata on bottom. The original JIRA AC said "Left: list /
- * Right: frame" — at the target viewport (≥1440) the alerts column
- * is ~430 px, too narrow for a horizontal split that includes a
- * readable 4:3 preview. Going vertical keeps everything at spec
- * dimensions; flagged as a deliberate deviation in the commit/PR.
+ * metadata on bottom. Vertical split is a deliberate deviation from
+ * the JIRA AC's "Left list / Right frame" — at the target viewport
+ * (≥1440) the alerts column is ~430 px, too narrow for a horizontal
+ * split that includes a readable 4:3 preview.
  *
- * Design-specs §2 Live Monitoring · default + §4 Alert firing:
- *   - Panel `border-left: var(--line-2)`, 56 px header.
+ * Design-specs §2 + §4 honoured:
+ *   - Panel `border-left: var(--line-2)`, 56 px header
+ *   - 3-col row grid `56px 1fr auto` with thumbnail + (chip + class
+ *     + sub-line) + time
  *   - Row tint `rgba(24,225,217,0.06)` for 2 s on arrival (token
- *     `--d-slow`), timestamp in cyan during the tint, linear fade.
- *   - Hover / selected rows use the standard ink/bg tokens.
+ *     `--d-slow`), timestamp cyan during the tint, linear fade
+ *   - Selected row: cyan inset bar via `box-shadow: inset 3px 0 0`
+ *
+ * Deliberate deviation from design-specs §Interactions
+ * (PO-directed, 2026-04-23):
+ *   - Row timestamps show absolute `MM/DD/YYYY` + `H:MM:SS AM/PM`
+ *     (local timezone, US conventions), not the spec's
+ *     `just now / Ns / Nm / HH:MM:SS-after-1h` relative ladder.
+ *     Rationale: for an
+ *     event-log / security-style UX, forensic review wants the
+ *     actual date and time — "3 m" doesn't tell an operator what
+ *     DAY the event happened, and the demo use case is reviewing
+ *     alerts after the fact, not monitoring them live. Full ISO
+ *     with ms precision + timezone still on hover via `title=`.
+ *     Removing the relative ladder also drops the 1 s re-render
+ *     ticker: rows are now static once mounted.
  *
  * Data flow:
  *   - App.tsx's useEffect fires `fetchRecentAlerts` on mount and
  *     dispatches `alerts/bootstrap`. This component never fetches
  *     the list — it's a pure projection of `state.alerts`.
  *   - WS pushes land via `ws/frame` with `isNew: true` on each
- *     merged event. We schedule a `alerts/clear-new` after 2 s so
- *     the tint fades.
+ *     merged event. Each row's `onAnimationEnd` dispatches
+ *     `alerts/clear-new` when its 2 s CSS tint completes.
  *   - Clicking a row dispatches `alerts/select`. If the selected
  *     alert's `frame_path` is still unknown (WS push arrived before
  *     NW-1402's snapshot committed), we call `fetchAlertById` and
@@ -58,11 +73,6 @@ export function AlertsPanel({
     () => alerts.find((a) => a.alert_id === selectedAlertId) ?? null,
     [alerts, selectedAlertId],
   )
-
-  // Each row dispatches `alerts/clear-new` when its own tint
-  // animation completes (see `AlertRow` below). No parent-level
-  // timer — bursts don't reset each other's clocks, and the
-  // browser-clock fade stays in lockstep with the keyframe.
 
   // Lazy detail fetch: when the user picks a row whose frame_path
   // is undefined (WS push only), request the full row and enrich.
@@ -113,9 +123,6 @@ export function AlertsPanel({
     <aside className="alerts-panel" aria-label="Recent alerts">
       <header className="alerts-panel__header">
         <h2 className="alerts-panel__title">Alerts</h2>
-        {/* Only the count is aria-live; the outer aside would
-         * otherwise make screen readers re-read the panel label
-         * on every new arrival. */}
         <span className="alerts-panel__count" aria-live="polite">
           {alerts.length === 0 ? '—' : `${alerts.length} total`}
         </span>
@@ -149,11 +156,7 @@ export function AlertsPanel({
         </ul>
       )}
 
-      <AlertDetail
-        alert={selected}
-        loading={frameLoading}
-        error={frameError}
-      />
+      <AlertDetail alert={selected} loading={frameLoading} error={frameError} />
     </aside>
   )
 }
@@ -169,7 +172,9 @@ interface AlertRowProps {
 }
 
 function AlertRow({ alert, selected, onSelect, onTintEnd }: AlertRowProps) {
-  const hhmmss = formatHhmmss(alert.timestamp)
+  const { date, time } = formatDateAndTime(alert.timestamp)
+  const ariaWhen = formatForAria(alert.timestamp)
+  const fullIso = alert.timestamp
 
   const handleAnimationEnd = (e: AnimationEvent<HTMLButtonElement>) => {
     // Two CSS animations run concurrently on a new row (bg tint +
@@ -193,18 +198,56 @@ function AlertRow({ alert, selected, onSelect, onTintEnd }: AlertRowProps) {
         onClick={onSelect}
         onAnimationEnd={handleAnimationEnd}
         aria-current={selected ? 'true' : undefined}
-        aria-label={`${alert.object_class} ${alert.event_type} at ${hhmmss}`}
+        aria-label={`${alert.object_class} ${alert.event_type} on ${ariaWhen}`}
       >
-        <span className="alerts-panel__time">{hhmmss}</span>
-        <span className="alerts-panel__class">{alert.object_class}</span>
-        <span
-          className={`alerts-panel__event alerts-panel__event--${alert.event_type}`}
-        >
-          {alert.event_type}
+        <AlertThumb alert={alert} />
+        <span className="alerts-panel__meta">
+          <span className="alerts-panel__type-row">
+            <span
+              className={`alerts-panel__event alerts-panel__event--${alert.event_type}`}
+            >
+              {alert.event_type}
+            </span>
+            <span className="alerts-panel__class">{alert.object_class}</span>
+          </span>
+          <span className="alerts-panel__sub">
+            #{alert.track_id}
+          </span>
+        </span>
+        {/* Stacked date + time. Two lines so the full `YYYY-MM-DD
+         * HH:MM:SS` doesn't squeeze the middle column at 360 px
+         * panel width. `title=` carries ms precision + timezone
+         * for when the operator needs to correlate with another
+         * system's logs. */}
+        <span className="alerts-panel__time" title={fullIso}>
+          <span className="alerts-panel__date">{date}</span>
+          <span className="alerts-panel__clock">{time}</span>
         </span>
       </button>
     </li>
   )
+}
+
+/**
+ * 56×42 thumbnail. When the alert has a `frame_path`, shows the
+ * saved JPEG (browser caches it on the first hit). Otherwise a
+ * gradient placeholder — same pattern the design-specs mock uses
+ * so empty rows don't visually collapse.
+ */
+function AlertThumb({ alert }: { alert: Alert }) {
+  if (alert.frame_path) {
+    return (
+      <img
+        src={frameUrl(alert.frame_path)}
+        alt=""
+        className="alerts-panel__thumb"
+        width={56}
+        height={42}
+        loading="lazy"
+      />
+    )
+  }
+  return <span className="alerts-panel__thumb alerts-panel__thumb--empty" aria-hidden="true" />
 }
 
 interface AlertDetailProps {
@@ -238,7 +281,7 @@ function AlertDetail({ alert, loading, error }: AlertDetailProps) {
         ) : alert.frame_path ? (
           <img
             src={frameUrl(alert.frame_path)}
-            alt={`Frame for ${alert.object_class} ${alert.event_type} at ${formatHhmmss(alert.timestamp)}`}
+            alt={`Frame for ${alert.object_class} ${alert.event_type}`}
             className="alerts-panel__frame"
             width={320}
             height={240}
@@ -250,7 +293,7 @@ function AlertDetail({ alert, loading, error }: AlertDetailProps) {
         )}
       </div>
 
-      <dl className="alerts-panel__meta">
+      <dl className="alerts-panel__meta-grid">
         <div className="alerts-panel__meta-row">
           <dt>Class</dt>
           <dd>{alert.object_class}</dd>
@@ -265,27 +308,205 @@ function AlertDetail({ alert, loading, error }: AlertDetailProps) {
         </div>
         <div className="alerts-panel__meta-row">
           <dt>Time</dt>
-          <dd>{formatHhmmss(alert.timestamp)}</dd>
+          <dd title={alert.timestamp}>{formatDateTime(alert.timestamp)}</dd>
         </div>
       </dl>
+
+      <AlertActions alert={alert} />
     </section>
   )
 }
 
+interface AlertActionsProps {
+  alert: Alert
+}
+
 /**
- * Parse ISO 8601 into HH:MM:SS in the viewer's local timezone. The
- * spec's alert row format is "HH:MM:SS | class | enter|exit" — two
- * colons, no date, no timezone. `Date.toLocaleTimeString` with the
- * en-GB locale forces 24-hour format regardless of system locale,
- * which keeps the demo readable on machines set to 12-hour clocks.
+ * Download + Copy actions for the selected alert.
+ *
+ * Download: `fetch → Blob → createObjectURL → anchor.click → revoke`.
+ * Using a plain `<a download>` with a cross-origin `href` would let
+ * the browser override our suggested filename (and, on Safari, just
+ * navigate). The blob round-trip is the only reliable cross-origin
+ * pattern.
+ *
+ * Copy: `navigator.clipboard.writeText`. Gracefully surfaces a
+ * "Copied!" state for 1.5 s. The JSON is the canonical wire shape
+ * — same keys the server emits — so downstream tooling (grep, jq)
+ * sees exactly what the backend sent.
  */
-function formatHhmmss(iso: string): string {
+function AlertActions({ alert }: AlertActionsProps) {
+  const [copyState, setCopyState] = useState<'idle' | 'ok' | 'err'>('idle')
+  const [downloadState, setDownloadState] = useState<'idle' | 'busy' | 'err'>(
+    'idle',
+  )
+  // Reset transient button labels on alert change so clicking between
+  // rows doesn't strand a stale "Copied!" message on the wrong entry.
+  // Uses React 18's "adjust state during render" pattern
+  // (https://react.dev/reference/react/useState#storing-information-from-previous-renders)
+  // — legal because the ref flip guards against the infinite loop,
+  // and `setState` during render of the SAME component is allowed.
+  // Do not "fix" this into a useEffect — that would cause a second
+  // render pass every time the selected row changes.
+  const lastSelectedRef = useRef<string | null>(null)
+  if (lastSelectedRef.current !== alert.alert_id) {
+    lastSelectedRef.current = alert.alert_id
+    if (copyState !== 'idle') setCopyState('idle')
+    if (downloadState !== 'idle') setDownloadState('idle')
+  }
+
+  const canDownload = Boolean(alert.frame_path)
+
+  const handleDownload = async () => {
+    if (!alert.frame_path) return
+    setDownloadState('busy')
+    let url: string | null = null
+    let anchor: HTMLAnchorElement | null = null
+    try {
+      const res = await fetch(frameUrl(alert.frame_path))
+      if (!res.ok) throw new Error(`fetch ${res.status}`)
+      const blob = await res.blob()
+      url = URL.createObjectURL(blob)
+      anchor = document.createElement('a')
+      anchor.href = url
+      // Belt-and-suspenders: `frame_path` is already basenamed by
+      // the REST handler (NW-1403 _present), but a stray slash
+      // would turn into a directory prefix in the browser's save
+      // dialog on some platforms — pop it defensively.
+      anchor.download = alert.frame_path.split('/').pop() ?? alert.frame_path
+      document.body.appendChild(anchor)
+      anchor.click()
+      setDownloadState('idle')
+    } catch (err) {
+      console.error('[AlertsPanel] download failed', err)
+      setDownloadState('err')
+      window.setTimeout(() => setDownloadState('idle'), 1500)
+    } finally {
+      // Always clean up — even if fetch/createObjectURL throws
+      // partway, leaking the object URL would accumulate in a
+      // long-lived session and orphan DOM anchors.
+      anchor?.remove()
+      if (url !== null) URL.revokeObjectURL(url)
+    }
+  }
+
+  const handleCopy = async () => {
+    try {
+      // Strip the UI-only `isNew` flag so the clipboard payload is
+      // the canonical event shape that matches what the server
+      // emits on the wire + persists in SQLite.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { isNew: _isNew, ...canonical } = alert
+      await navigator.clipboard.writeText(JSON.stringify(canonical, null, 2))
+      setCopyState('ok')
+      window.setTimeout(() => setCopyState('idle'), 1500)
+    } catch (err) {
+      console.error('[AlertsPanel] clipboard write failed', err)
+      setCopyState('err')
+      window.setTimeout(() => setCopyState('idle'), 1500)
+    }
+  }
+
+  return (
+    <div className="alerts-panel__actions">
+      <button
+        type="button"
+        className="btn"
+        onClick={handleDownload}
+        disabled={!canDownload || downloadState === 'busy'}
+        title={canDownload ? undefined : 'No saved frame for this alert'}
+      >
+        {downloadState === 'busy'
+          ? 'Downloading…'
+          : downloadState === 'err'
+            ? 'Download failed'
+            : 'Download frame'}
+      </button>
+      <button
+        type="button"
+        className="btn"
+        onClick={handleCopy}
+      >
+        {copyState === 'ok'
+          ? 'Copied!'
+          : copyState === 'err'
+            ? 'Copy failed'
+            : 'Copy JSON'}
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Format an ISO 8601 string into a human-readable local date and
+ * time. Locale pick is independent of the operator's system
+ * locale so the demo looks the same on a French or 24-hour-clock
+ * machine:
+ *   - Date: `en-US` → `MM/DD/YYYY` (American convention)
+ *   - Time: `en-US` → `H:MM:SS AM/PM` (12-hour American)
+ *
+ * Both formatters pass the same ISO string through
+ * `new Date(...)` which handles the local-timezone offset. The
+ * original UTC ISO is still available in the component via
+ * `alert.timestamp` (rendered on hover as `title=`) when the
+ * operator needs millisecond precision or a timezone-aware value
+ * to correlate with another system.
+ */
+function formatDate(iso: string): string {
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso // pass through unparseable
-  return d.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false,
+    hour12: true,
   })
+}
+
+/** Single-line "MM/DD/YYYY H:MM:SS AM/PM". Used in the detail
+ * metadata grid where a card has room for the full string on one
+ * line. */
+function formatDateTime(iso: string): string {
+  return `${formatDate(iso)} ${formatTime(iso)}`
+}
+
+/** Split form for the row time cell — stacks date over time so
+ * the full datetime doesn't crowd the middle column at 360 px
+ * panel width. */
+function formatDateAndTime(iso: string): { date: string; time: string } {
+  return { date: formatDate(iso), time: formatTime(iso) }
+}
+
+/**
+ * Accessibility-friendly rendering of the same instant. Screen
+ * readers pronounce digit/slash strings like `04/23/2026` as
+ * "four slash twenty three …" which is unpleasant. The long-form
+ * date + medium time (`April 23, 2026 at 6:10:22 AM`) reads
+ * cleanly on NVDA / JAWS / VoiceOver.
+ */
+function formatForAria(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const date = d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+  const time = d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  })
+  return `${date} at ${time}`
 }
