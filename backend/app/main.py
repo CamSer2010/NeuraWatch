@@ -18,7 +18,7 @@ from .api.routes_alerts import router as alerts_router
 from .api.routes_session import router as session_router
 from .api.routes_upload import router as upload_router
 from .api.routes_ws import router as ws_router
-from .config import get_settings
+from .config import BACKEND_ROOT, get_settings
 from .db import init_db, open_db
 from .services.frame_processor import FrameProcessor
 from .services.inference_service import InferenceService
@@ -131,6 +131,28 @@ def create_app() -> FastAPI:
         StaticFiles(directory=settings.frames_dir),
         name="frames",
     )
+
+    # NW-1504: single-port deploy. When `frontend/dist` exists, serve
+    # the built SPA at `/` so one uvicorn + one ngrok tunnel covers the
+    # whole app. Mount LAST — StaticFiles at `/` would otherwise shadow
+    # every API route and the `/frames` mount above. When the dist dir
+    # is absent (fresh clone, backend-only tests), this silently no-ops
+    # and the frontend keeps working via the Vite dev server on :3000.
+    dist_dir = BACKEND_ROOT.parent / "frontend" / "dist"
+    if dist_dir.is_dir():
+        app.mount(
+            "/",
+            StaticFiles(directory=dist_dir, html=True),
+            name="spa",
+        )
+        logging.getLogger("app.main").info(
+            "NW-1504: serving SPA bundle from %s", dist_dir
+        )
+    else:
+        logging.getLogger("app.main").info(
+            "NW-1504: frontend/dist not found — skipping SPA mount "
+            "(run `npm run build` for single-port deploy)"
+        )
     return app
 
 

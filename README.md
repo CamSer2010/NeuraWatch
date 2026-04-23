@@ -24,12 +24,58 @@ CONTRIBUTING.md
 
 ## Local setup
 
-Full setup instructions land with the backend (**NW-1002**) and frontend (**NW-1003**) scaffolds. End-to-end demo instructions and the ngrok re-tunnel command ship with **NW-1601**.
+Full setup instructions land with the backend (**NW-1002**) and frontend (**NW-1003**) scaffolds. Full end-to-end demo instructions ship with **NW-1601**.
 
 Prerequisites:
 - Python 3.11+ (tested on 3.14)
 - Node 20+
 - ngrok (with authtoken)
+
+## Single-port deployment (NW-1504)
+
+For the demo, FastAPI serves the built Vite bundle on port 8000 and ngrok exposes that one port. No CORS dance, no separate frontend server — the SPA and the API share an origin.
+
+### One-time ngrok setup
+
+```bash
+# Claim a free account at https://dashboard.ngrok.com, then:
+ngrok config add-authtoken <YOUR_TOKEN>
+```
+
+### Build and serve
+
+```bash
+# 1. Build the frontend bundle → frontend/dist
+cd frontend
+npm install        # first time only
+npm run build
+
+# 2. Start FastAPI on :8000 (serves dist/ + /api + /ws on one port)
+cd ../backend
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# 3. In a second terminal, expose :8000 over HTTPS
+ngrok http 8000
+```
+
+Open the `https://<random>.ngrok-free.app` URL ngrok prints. The frontend derives its WebSocket and REST URLs from `window.location`, so the same build works on `http://localhost:8000` and on the ngrok hostname without a rebuild.
+
+### Re-tunnel after a restart
+
+Free-tier ngrok rotates the public hostname every time the tunnel restarts. After a reboot or a tunnel drop, just re-run:
+
+```bash
+ngrok http 8000
+```
+
+…and share the new URL. The FastAPI server and the `frontend/dist` bundle do **not** need to be rebuilt.
+
+### Demo limitations
+
+- **`getUserMedia` (webcam) requires HTTPS.** ngrok supplies HTTPS, so remote browsers work. Plain `http://localhost:8000` works locally because browsers treat `localhost` as a secure origin.
+- **Inference runs on the host laptop.** The ngrok URL only works while the laptop is on and the uvicorn + ngrok processes are alive.
+- **Free-tier ngrok URLs rotate on restart.** The link from yesterday's demo will not work today.
+- **Free-tier ngrok has a per-minute request cap.** Fine for a single demo browser; do not stress-test through the tunnel.
 
 ## Performance
 
