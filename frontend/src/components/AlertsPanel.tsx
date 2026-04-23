@@ -15,15 +15,27 @@ import './AlertsPanel.css'
  * (≥1440) the alerts column is ~430 px, too narrow for a horizontal
  * split that includes a readable 4:3 preview.
  *
- * Design-specs §2 + §4 + §Interactions honoured:
+ * Design-specs §2 + §4 honoured:
  *   - Panel `border-left: var(--line-2)`, 56 px header
  *   - 3-col row grid `56px 1fr auto` with thumbnail + (chip + class
  *     + sub-line) + time
  *   - Row tint `rgba(24,225,217,0.06)` for 2 s on arrival (token
  *     `--d-slow`), timestamp cyan during the tint, linear fade
  *   - Selected row: cyan inset bar via `box-shadow: inset 3px 0 0`
- *   - Relative timestamps ("just now" / "Ns" / "Nm"); absolute
- *     `HH:MM:SS` after 1 h. Full ISO on hover via `title=`
+ *
+ * Deliberate deviation from design-specs §Interactions
+ * (PO-directed, 2026-04-23):
+ *   - Row timestamps show absolute `MM/DD/YYYY` + `H:MM:SS AM/PM`
+ *     (local timezone, US conventions), not the spec's
+ *     `just now / Ns / Nm / HH:MM:SS-after-1h` relative ladder.
+ *     Rationale: for an
+ *     event-log / security-style UX, forensic review wants the
+ *     actual date and time — "3 m" doesn't tell an operator what
+ *     DAY the event happened, and the demo use case is reviewing
+ *     alerts after the fact, not monitoring them live. Full ISO
+ *     with ms precision + timezone still on hover via `title=`.
+ *     Removing the relative ladder also drops the 1 s re-render
+ *     ticker: rows are now static once mounted.
  *
  * Data flow:
  *   - App.tsx's useEffect fires `fetchRecentAlerts` on mount and
@@ -52,29 +64,6 @@ const LIST_VISIBLE_COUNT = 20 // AC: "last 20 alerts"
 // 0.01 ms) still fires the clear event promptly.
 const NEW_TINT_ANIMATION_NAME = 'alerts-panel-tint'
 
-// Tick frequency for the relative-timestamp display. 1 s is the
-// highest resolution any of the format buckets needs ("Ns"); faster
-// would just burn cycles. Below the 1-hour threshold we tick; once
-// every visible row has crossed into absolute-time territory the
-// ticker will keep running but its output becomes stable, so we
-// don't bother gating.
-const RELATIVE_TICK_MS = 1000
-const ONE_HOUR_MS = 60 * 60 * 1000
-
-/**
- * Lightweight "now" ticker used only by the alerts panel. Returns a
- * monotonically-advancing millisecond value and re-renders the
- * consumer every `RELATIVE_TICK_MS`.
- */
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), intervalMs)
-    return () => window.clearInterval(id)
-  }, [intervalMs])
-  return now
-}
-
 export function AlertsPanel({
   alerts,
   selectedAlertId,
@@ -84,10 +73,6 @@ export function AlertsPanel({
     () => alerts.find((a) => a.alert_id === selectedAlertId) ?? null,
     [alerts, selectedAlertId],
   )
-
-  // Shared "now" bumped every second — drives relative timestamps on
-  // every visible row without each one running its own interval.
-  const now = useNow(RELATIVE_TICK_MS)
 
   // Lazy detail fetch: when the user picks a row whose frame_path
   // is undefined (WS push only), request the full row and enrich.
@@ -157,7 +142,6 @@ export function AlertsPanel({
               key={alert.alert_id}
               alert={alert}
               selected={alert.alert_id === selectedAlertId}
-              now={now}
               onSelect={() =>
                 dispatch({ type: 'alerts/select', alertId: alert.alert_id })
               }
@@ -180,7 +164,6 @@ export function AlertsPanel({
 interface AlertRowProps {
   alert: Alert
   selected: boolean
-  now: number
   onSelect: () => void
   /** Fires when the row's own 2 s "new-alert" tint animation ends.
    * Dispatched regardless of whether `isNew` is still true — the
@@ -188,14 +171,9 @@ interface AlertRowProps {
   onTintEnd: () => void
 }
 
-function AlertRow({
-  alert,
-  selected,
-  now,
-  onSelect,
-  onTintEnd,
-}: AlertRowProps) {
-  const relativeTime = formatRelative(alert.timestamp, now)
+function AlertRow({ alert, selected, onSelect, onTintEnd }: AlertRowProps) {
+  const { date, time } = formatDateAndTime(alert.timestamp)
+  const ariaWhen = formatForAria(alert.timestamp)
   const fullIso = alert.timestamp
 
   const handleAnimationEnd = (e: AnimationEvent<HTMLButtonElement>) => {
@@ -220,7 +198,7 @@ function AlertRow({
         onClick={onSelect}
         onAnimationEnd={handleAnimationEnd}
         aria-current={selected ? 'true' : undefined}
-        aria-label={`${alert.object_class} ${alert.event_type}, ${relativeTime}`}
+        aria-label={`${alert.object_class} ${alert.event_type} on ${ariaWhen}`}
       >
         <AlertThumb alert={alert} />
         <span className="alerts-panel__meta">
@@ -236,8 +214,14 @@ function AlertRow({
             #{alert.track_id}
           </span>
         </span>
+        {/* Stacked date + time. Two lines so the full `YYYY-MM-DD
+         * HH:MM:SS` doesn't squeeze the middle column at 360 px
+         * panel width. `title=` carries ms precision + timezone
+         * for when the operator needs to correlate with another
+         * system's logs. */}
         <span className="alerts-panel__time" title={fullIso}>
-          {relativeTime}
+          <span className="alerts-panel__date">{date}</span>
+          <span className="alerts-panel__clock">{time}</span>
         </span>
       </button>
     </li>
@@ -324,7 +308,7 @@ function AlertDetail({ alert, loading, error }: AlertDetailProps) {
         </div>
         <div className="alerts-panel__meta-row">
           <dt>Time</dt>
-          <dd title={alert.timestamp}>{formatHhmmss(alert.timestamp)}</dd>
+          <dd title={alert.timestamp}>{formatDateTime(alert.timestamp)}</dd>
         </div>
       </dl>
 
@@ -454,40 +438,75 @@ function AlertActions({ alert }: AlertActionsProps) {
 }
 
 /**
- * Parse ISO 8601 into HH:MM:SS in the viewer's local timezone.
- * Used in the detail pane metadata grid where absolute-time is
- * useful regardless of recency. `Date.toLocaleTimeString` with
- * `en-GB` forces 24-hour format.
+ * Format an ISO 8601 string into a human-readable local date and
+ * time. Locale pick is independent of the operator's system
+ * locale so the demo looks the same on a French or 24-hour-clock
+ * machine:
+ *   - Date: `en-US` → `MM/DD/YYYY` (American convention)
+ *   - Time: `en-US` → `H:MM:SS AM/PM` (12-hour American)
+ *
+ * Both formatters pass the same ISO string through
+ * `new Date(...)` which handles the local-timezone offset. The
+ * original UTC ISO is still available in the component via
+ * `alert.timestamp` (rendered on hover as `title=`) when the
+ * operator needs millisecond precision or a timezone-aware value
+ * to correlate with another system.
  */
-function formatHhmmss(iso: string): string {
+function formatDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   })
 }
 
+function formatTime(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  })
+}
+
+/** Single-line "MM/DD/YYYY H:MM:SS AM/PM". Used in the detail
+ * metadata grid where a card has room for the full string on one
+ * line. */
+function formatDateTime(iso: string): string {
+  return `${formatDate(iso)} ${formatTime(iso)}`
+}
+
+/** Split form for the row time cell — stacks date over time so
+ * the full datetime doesn't crowd the middle column at 360 px
+ * panel width. */
+function formatDateAndTime(iso: string): { date: string; time: string } {
+  return { date: formatDate(iso), time: formatTime(iso) }
+}
+
 /**
- * Design-specs §Interactions: alert rows show relative time
- * (`just now` / `Ns` / `Nm`) for the first hour, absolute
- * `HH:MM:SS` thereafter. `now` is threaded in from a parent 1 s
- * ticker so every visible row re-renders together.
+ * Accessibility-friendly rendering of the same instant. Screen
+ * readers pronounce digit/slash strings like `04/23/2026` as
+ * "four slash twenty three …" which is unpleasant. The long-form
+ * date + medium time (`April 23, 2026 at 6:10:22 AM`) reads
+ * cleanly on NVDA / JAWS / VoiceOver.
  */
-function formatRelative(iso: string, now: number): string {
-  const t = Date.parse(iso)
-  if (Number.isNaN(t)) return iso
-  const deltaMs = now - t
-  // Clock-skew defense: server-stamped timestamps can come in ~ms
-  // ahead of the client's `Date.now()` (or far ahead if the client
-  // clock is out of sync). Treat any future-tense delta as "just
-  // now" explicitly so a refactor of the 10 s threshold doesn't
-  // accidentally expose negative values as `-5 s`.
-  if (deltaMs < 0) return 'just now'
-  if (deltaMs < 10_000) return 'just now'
-  if (deltaMs < 60_000) return `${Math.floor(deltaMs / 1000)} s`
-  if (deltaMs < ONE_HOUR_MS) return `${Math.floor(deltaMs / 60_000)} m`
-  return formatHhmmss(iso)
+function formatForAria(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const date = d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+  const time = d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  })
+  return `${date} at ${time}`
 }
