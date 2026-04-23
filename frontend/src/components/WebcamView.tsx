@@ -55,10 +55,13 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
   const retryButtonRef = useRef<HTMLButtonElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
-  // Focus the Retry button on transition into an alert state so
-  // keyboard users aren't stranded on an unmounted Start button.
+  // Focus the Retry button when camera permission gets denied so
+  // keyboard users aren't stranded on the unmounted Start button.
+  // Not done on 'error' — that panel carries no actionable control
+  // (Reset Demo is a history-wipe utility, not an error-recovery
+  // CTA — PO-directed, 2026-04-23), so there's nothing to focus.
   useEffect(() => {
-    if (state.status === 'camera-denied' || state.status === 'error') {
+    if (state.status === 'camera-denied') {
       retryButtonRef.current?.focus()
     }
   }, [state.status])
@@ -440,10 +443,14 @@ function DeniedPanel({ error, onRetry, retryRef }: PanelProps) {
 }
 
 function ErrorPanel({ error }: PanelProps) {
-  // `error` status is pinned per spec §System States — recovery
-  // requires explicit Reset Demo. Reset Demo now lives in the
-  // AppHeader (NW-1405), so we point the operator there rather than
-  // duplicating the CTA inline.
+  // `error` status is pinned per reducer invariant — the pipeline
+  // can't recover on its own from a WS 1011 / second-consecutive
+  // close. Deliberate PO direction (2026-04-23): do NOT frame Reset
+  // Demo as the recovery path. Reset Demo is a history-wipe utility
+  // the operator reaches for when they want a clean alerts list,
+  // not an error-recovery CTA. The honest answer here is "refresh
+  // the page" — which reloads the React tree from initialAppState
+  // without touching server persistence.
   return (
     <div
       className="webcam-view__alert webcam-view__alert--error"
@@ -456,7 +463,7 @@ function ErrorPanel({ error }: PanelProps) {
         {error ?? 'The live pipeline hit an error it cannot recover from on its own.'}
       </p>
       <p className="webcam-view__lede">
-        Click <strong>Reset Demo</strong> in the top right to clear state and start over.
+        Refresh the page to try again.
       </p>
     </div>
   )
