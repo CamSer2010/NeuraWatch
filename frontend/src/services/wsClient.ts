@@ -129,10 +129,14 @@ export function sendFrame(blob: Blob): void {
  * Send a JSON control message (zone_update, zone_clear, reset...).
  * NW-1301 / NW-1405 use this. Silently drops when the socket isn't
  * OPEN so callers can fire-and-forget during reconnect windows.
+ * Returns `true` when the send went through, `false` otherwise — so
+ * callers doing one-shot handshakes (NW-1202's `process_upload`) can
+ * stop retrying once they know it landed.
  */
-export function sendMessage(msg: object): void {
-  if (ws === null || ws.readyState !== WebSocket.OPEN) return
+export function sendMessage(msg: object): boolean {
+  if (ws === null || ws.readyState !== WebSocket.OPEN) return false
   ws.send(JSON.stringify(msg))
+  return true
 }
 
 // ---- internals ---------------------------------------------------------
@@ -201,8 +205,15 @@ function _open(): void {
         events: ZoneEventWire[]
         zone_version: number
         stats: { fps: number; inference_ms: number; roundtrip_ms?: number }
+        // NW-1202: upload mode carries pts_ms + frame_idx.
+        pts_ms?: number
+        frame_idx?: number
       }
-      if (raw.seq <= lastSeq) return // stale
+      // Stale-seq drop only applies to webcam mode. Upload mode uses
+      // frame_idx as seq (mirrored server-side), and the FE's
+      // prediction buffer is the ordering authority — skipping frames
+      // here would punch holes in the overlay timeline for no gain.
+      if (raw.mode === 'webcam' && raw.seq <= lastSeq) return
       lastSeq = raw.seq
       inFlight = false
       _clearWatchdog()
@@ -215,6 +226,8 @@ function _open(): void {
         events: raw.events,
         zone_version: raw.zone_version,
         stats: raw.stats,
+        pts_ms: raw.pts_ms,
+        frame_idx: raw.frame_idx,
       }
       dispatchFn?.({ type: 'ws/frame', payload })
       return
@@ -226,6 +239,22 @@ function _open(): void {
       // instead of waiting for the 2s watchdog to tick.
       inFlight = false
       _clearWatchdog()
+      return
+    }
+
+    if (msg.type === 'processing_complete') {
+      // NW-1202: server finished reading the uploaded video. The
+      // reducer flips uploadPhase → 'complete' and status → 'idle'.
+      const raw = parsed as {
+        type: 'processing_complete'
+        total_frames: number
+        alerts_created: number
+      }
+      dispatchFn?.({
+        type: 'upload/complete',
+        totalFrames: raw.total_frames,
+        alertsCreated: raw.alerts_created,
+      })
       return
     }
   }

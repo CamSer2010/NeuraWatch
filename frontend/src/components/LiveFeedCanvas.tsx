@@ -1,6 +1,7 @@
+import type { RefObject } from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import type { Detection, Point } from '../types'
+import type { Detection, PredictionFrame, Point } from '../types'
 import './LiveFeedCanvas.css'
 
 /**
@@ -64,6 +65,13 @@ export interface LiveFeedCanvasProps {
   onRemoveLastPoint: () => void
   onCloseZone: () => void
   onCancelDraw: () => void
+
+  // --- NW-1202 upload-playback overlay sync ---
+  /** When set, the rAF loop matches `videoRef.current.currentTime` to
+   * the buffer's `pts_ms` on every tick and draws the closest prior
+   * prediction's detections. Leaves `detections` prop unused. */
+  uploadPredictions?: PredictionFrame[]
+  videoRef?: RefObject<HTMLVideoElement | null>
 }
 
 const CANVAS_W = 640
@@ -103,7 +111,10 @@ export function LiveFeedCanvas({
   onRemoveLastPoint,
   onCloseZone,
   onCancelDraw,
+  uploadPredictions,
+  videoRef,
 }: LiveFeedCanvasProps) {
+  const uploadMode = uploadPredictions !== undefined && videoRef !== undefined
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Refs into the rAF loop: fresh props on every render write-through
@@ -113,10 +124,12 @@ export function LiveFeedCanvas({
   const zonePointsRef = useRef<Point[]>(zonePoints)
   const zoneDrawingRef = useRef<boolean>(zoneDrawing)
   const zoneClosedRef = useRef<boolean>(zoneClosed)
+  const uploadPredictionsRef = useRef<PredictionFrame[]>(uploadPredictions ?? [])
   detectionsRef.current = detections
   zonePointsRef.current = zonePoints
   zoneDrawingRef.current = zoneDrawing
   zoneClosedRef.current = zoneClosed
+  uploadPredictionsRef.current = uploadPredictions ?? []
 
   // Cursor position (normalized 0–1) for rubber-band preview. Kept
   // in a ref because pointermove fires far more often than React can
@@ -159,7 +172,9 @@ export function LiveFeedCanvas({
   //   - cameraActive + closed (committed polygon overlay)
   // Otherwise clears once and stays idle.
   const shouldRender =
-    active || (cameraActive && (zoneDrawing || zoneClosed))
+    active ||
+    (cameraActive && (zoneDrawing || zoneClosed)) ||
+    uploadMode
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -258,13 +273,31 @@ export function LiveFeedCanvas({
       }
 
       // --- Detection layer (drawn OVER the polygon) ---------------
-      if (active) {
+      // NW-1202: upload mode picks detections from the pts_ms-keyed
+      // buffer by matching the video element's currentTime. Falls
+      // back gracefully — empty array — when the buffer is empty or
+      // the video is ahead of the server's processing pace. (When the
+      // video is behind any buffered frame, we pick the latest one
+      // whose pts_ms is still ≤ currentTime.)
+      let renderDetections = detectionsRef.current
+      if (uploadMode) {
+        const vid = videoRef?.current ?? null
+        const buf = uploadPredictionsRef.current
+        if (vid !== null && buf.length > 0) {
+          const ptsMs = vid.currentTime * 1000
+          renderDetections = _pickPrediction(buf, ptsMs)
+        } else {
+          renderDetections = []
+        }
+      }
+
+      if (active || uploadMode) {
         ctx.lineWidth = BBOX_WIDTH
         ctx.strokeStyle = cyan
         ctx.font = LABEL_FONT
         ctx.textBaseline = 'middle'
 
-        for (const det of detectionsRef.current) {
+        for (const det of renderDetections) {
           const [nx1, ny1, nx2, ny2] = det.bbox
           const x1 = nx1 * CANVAS_W
           const y1 = ny1 * CANVAS_H
@@ -315,7 +348,7 @@ export function LiveFeedCanvas({
       cancelAnimationFrame(raf)
       ctx.clearRect(0, 0, CANVAS_W, CANVAS_H)
     }
-  }, [shouldRender, active])
+  }, [shouldRender, active, uploadMode])
 
   // Debounced aria-label for the detection summary.
   useEffect(() => {
@@ -409,6 +442,42 @@ function clamp01(v: number): number {
   if (v < 0) return 0
   if (v > 1) return 1
   return v
+}
+
+/**
+ * NW-1202: find the buffered prediction to draw for a given video
+ * currentTime. Picks the entry with the largest `pts_ms` that is
+ * still ≤ the requested value (the most recent frame the server
+ * processed up to this point in playback). When the video has
+ * overtaken the buffer (server falling behind), returns the latest
+ * buffered detections so bboxes "stick" rather than flicker off.
+ * When the video is before all buffered entries (user seeked
+ * backward past the buffer horizon), returns an empty list — we'd
+ * rather show nothing than lie with wrong positions.
+ *
+ * Binary search because the buffer can hold up to 200 entries and
+ * this runs every rAF tick (~60/s).
+ */
+function _pickPrediction(
+  buf: PredictionFrame[],
+  ptsMs: number,
+): Detection[] {
+  if (buf.length === 0) return []
+  // Fast path: most common case is that ptsMs is just past the last
+  // entry (playback smoothly ahead of server processing).
+  const last = buf[buf.length - 1]
+  if (ptsMs >= last.pts_ms) return last.detections
+  // Video is before the earliest buffered frame — no safe overlay.
+  if (ptsMs < buf[0].pts_ms) return []
+  // Binary search for largest pts_ms ≤ target.
+  let lo = 0
+  let hi = buf.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (buf[mid].pts_ms <= ptsMs) lo = mid
+    else hi = mid - 1
+  }
+  return buf[lo].detections
 }
 
 function summarizeForAria(detections: Detection[]): string {

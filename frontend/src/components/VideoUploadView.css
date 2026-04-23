@@ -1,0 +1,47 @@
+/* VideoUploadView — NW-1202 supplements to WebcamView.css.
+ * Most layout is reused; only the upload-specific picker + banner
+ * need their own tokens.
+ */
+
+.video-upload-view__file {
+  font-family: var(--f-body);
+  font-size: 12px;
+  color: var(--ink-1);
+  padding: var(--sp-2) 0;
+}
+
+.video-upload-view__file:disabled {
+  opacity: 0.5;
+}
+
+.video-upload-view__err {
+  color: var(--red);
+  font-size: 12px;
+  margin-top: var(--sp-2);
+}
+
+.video-upload-view__banner {
+  position: absolute;
+  left: 50%;
+  bottom: var(--sp-4);
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: var(--sp-2) var(--sp-4);
+  background: rgba(15, 22, 32, 0.85);
+  color: var(--ink-0);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  font-family: var(--f-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.video-upload-view__banner[data-phase='processing'] {
+  border-color: var(--violet);
+  color: var(--violet);
+}
+
+.video-upload-view__banner[data-phase='complete'] {
+  border-color: var(--green);
+  color: var(--green);
+}

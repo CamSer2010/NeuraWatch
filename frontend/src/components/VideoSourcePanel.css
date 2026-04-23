@@ -1,0 +1,47 @@
+/* VideoSourcePanel — NW-1202 segmented control.
+ * Visual weight matches the PolygonToolbar strip so the left column's
+ * control surfaces feel uniform. Tokens only — no hardcoded colors.
+ */
+
+.video-source-panel {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  gap: 2px;
+}
+
+.video-source-panel__btn {
+  appearance: none;
+  background: transparent;
+  color: var(--ink-1);
+  font-family: var(--f-body);
+  font-size: 13px;
+  font-weight: 500;
+  padding: var(--sp-2) var(--sp-4);
+  border: 0;
+  border-radius: calc(var(--r-md) - 2px);
+  cursor: pointer;
+  transition: background var(--d-fast) ease-out,
+    color var(--d-fast) ease-out;
+}
+
+.video-source-panel__btn:hover:not(:disabled) {
+  color: var(--cyan);
+}
+
+.video-source-panel__btn[data-active='true'] {
+  background: var(--cyan);
+  color: var(--ink-on-cyan);
+}
+
+.video-source-panel__btn[data-active='true']:hover {
+  background: var(--cyan-d);
+  color: var(--ink-on-cyan);
+}
+
+.video-source-panel__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
