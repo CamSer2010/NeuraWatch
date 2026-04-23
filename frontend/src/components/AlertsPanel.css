@@ -1,20 +1,15 @@
-/* AlertsPanel — NW-1404
+/* AlertsPanel — NW-1404 + design-fidelity follow-up.
  *
  * Right-column occupant in the 70/30 monitor layout. All sizing /
- * colour is resolved via tokens.css; no magic values.
+ * colour resolves via tokens.css; no magic values.
  *
  * Layout: vertical split inside a flex column —
- *   header (56px fixed)
- *   list (flex:1, scrollable)
- *   detail (auto height; frame + metadata)
+ *   header (56 px fixed)
+ *   list  (flex:1, scrollable)
+ *   detail (auto; frame + metadata + actions)
  *
- * Design-specs §2 Live Monitoring · default:
- *   - `border-left: var(--line-2)`; header 56px
- * Design-specs §4 Live Monitoring · alert firing:
- *   - New row tint `rgba(24,225,217,0.06)` for 2 s, timestamp cyan,
- *     linear fade. We drive the tint with a CSS animation keyed on
- *     `data-new="true"`; a parent-level timer flips it back to false
- *     after NEW_TINT_MS so the animation doesn't loop.
+ * Row layout (design-specs handoff.css:374-405):
+ *   grid 56px 1fr auto → thumbnail | (chip + class + sub) | time
  */
 
 .alerts-panel {
@@ -70,7 +65,7 @@
 .alerts-panel__row-btn {
   width: 100%;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 56px 1fr auto;
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-5);
@@ -79,7 +74,8 @@
   color: var(--ink-1);
   text-align: left;
   cursor: pointer;
-  transition: background var(--d-fast) ease-out;
+  transition: background var(--d-fast) ease-out,
+    box-shadow var(--d-fast) ease-out;
   font-family: var(--f-body);
   font-size: 13px;
 }
@@ -88,13 +84,18 @@
   background: var(--bg-2);
 }
 
+/* Selected: bg-2 + cyan inset bar on the left edge per handoff.
+ * `box-shadow` rather than a border so the layout doesn't shift by
+ * 3 px the moment a row is chosen. */
 .alerts-panel__row[data-selected='true'] .alerts-panel__row-btn {
   background: var(--bg-2);
   color: var(--ink-0);
+  box-shadow: inset 3px 0 0 var(--cyan);
 }
 
 /* New-alert tint: cyan wash + cyan timestamp, linear fade over 2 s.
- * Rows stop animating once the parent flips `data-new` to `false`. */
+ * Rows stop animating once the parent flips `data-new` to `false`
+ * (dispatched from the row's own onAnimationEnd). */
 .alerts-panel__row[data-new='true'] .alerts-panel__row-btn {
   animation: alerts-panel-tint var(--d-slow) linear;
 }
@@ -116,45 +117,99 @@
     color: var(--cyan);
   }
   100% {
-    color: var(--ink-2);
+    color: var(--ink-3);
   }
 }
 
-.alerts-panel__time {
-  font-family: var(--f-mono);
-  font-size: 12px;
-  color: var(--ink-2);
-  letter-spacing: 0.02em;
+/* ---- Thumbnail column ---- */
+
+.alerts-panel__thumb {
+  width: 56px;
+  height: 42px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  object-fit: cover;
+  display: block;
+  background: var(--bg-0);
+}
+
+/* Gradient placeholder for alerts that haven't yet landed a saved
+ * frame (WS push ahead of NW-1402's snapshot, or dedup-skipped).
+ * Pattern mirrors handoff.css so empty rows still look intentional
+ * rather than broken. */
+.alerts-panel__thumb--empty {
+  background:
+    linear-gradient(135deg, rgba(24, 225, 217, 0.15), transparent),
+    repeating-linear-gradient(
+      45deg,
+      #0B1318 0px,
+      #0B1318 4px,
+      #0F1A20 4px,
+      #0F1A20 8px
+    );
+}
+
+/* ---- Meta column (middle) ---- */
+
+.alerts-panel__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0; /* let flex children ellipsize */
+}
+
+.alerts-panel__type-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 
 .alerts-panel__class {
-  font-family: var(--f-body);
+  font-family: var(--f-display);
+  font-weight: 500;
   font-size: 14px;
   color: var(--ink-0);
-  font-weight: 500;
+}
+
+.alerts-panel__sub {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--ink-3);
 }
 
 .alerts-panel__event {
   font-family: var(--f-mono);
   font-size: 10px;
-  letter-spacing: 0.14em;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: var(--r-md);
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid transparent;
 }
 
 .alerts-panel__event--enter {
   /* violet per spec §WebSocket Protocol Payload → UI mapping */
   background: rgba(167, 139, 250, 0.12);
   color: var(--violet);
-  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-color: rgba(167, 139, 250, 0.3);
 }
 
 .alerts-panel__event--exit {
   /* amber per spec */
   background: rgba(245, 165, 36, 0.12);
   color: var(--amber);
-  border: 1px solid rgba(245, 165, 36, 0.3);
+  border-color: rgba(245, 165, 36, 0.3);
+}
+
+/* ---- Time column ---- */
+
+.alerts-panel__time {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  text-align: right;
+  white-space: nowrap;
 }
 
 /* ---- Empty ---- */
@@ -237,11 +292,11 @@
   color: var(--red);
 }
 
-.alerts-panel__meta {
+.alerts-panel__meta-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-3);
-  margin: 0;
+  margin: 0 0 var(--sp-4) 0;
 }
 
 .alerts-panel__meta-row {
@@ -270,7 +325,21 @@
   font-weight: 500;
 }
 
+/* ---- Actions ---- */
+
+.alerts-panel__actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.alerts-panel__actions .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+}
+
 /* Respect the global prefers-reduced-motion override; tokens.css
- * already clamps --d-slow to 0.01ms, so the tint fade becomes an
+ * already clamps --d-slow to 0.01 ms, so the tint fade becomes an
  * instant flash rather than a 2 s crossfade. Screen readers get the
  * state update via aria-live regardless. */
