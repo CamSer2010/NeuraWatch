@@ -27,3 +27,7 @@ shapely>=2.0.0
 # rather than a split requirements-dev.txt to keep the 3-day setup
 # single-command.
 pytest>=8.0.0
+# httpx powers NW-1403's ASGI-level REST tests via
+# httpx.AsyncClient + ASGITransport (no live uvicorn needed).
+# Starlette's TestClient would also work but requires httpx anyway.
+httpx>=0.27.0

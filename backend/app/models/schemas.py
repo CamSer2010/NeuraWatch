@@ -121,3 +121,44 @@ class ZoneEvent(BaseModel):
             "dedupe."
         ),
     )
+
+
+class Alert(BaseModel):
+    """One persisted alert row as returned by the NW-1403 REST API.
+
+    Mirrors the 7 columns of the `alerts` table (NW-1401) with one
+    transformation: `frame_path` is normalized to JUST the filename
+    so the client can fetch the image via `GET /frames/{filename}`.
+    The DB still stores the absolute path that `cv2.imwrite` produced
+    in NW-1402 — the route handler strips it to the basename before
+    returning.
+
+    `frame_path` is nullable. It lands `None` in three cases:
+      - The WS emitted the event but NW-1402 skipped the snapshot
+        because another event for the same (track_id, event_type)
+        already saved one this session.
+      - The snapshot write failed (cv2.imwrite returned False).
+      - The row pre-dates NW-1402 (unlikely in a fresh deployment).
+
+    NW-1404's alerts panel gracefully shows a placeholder when
+    `frame_path` is null.
+    """
+
+    id: int = Field(description="DB primary key; ephemeral across /session/reset.")
+    alert_id: str = Field(
+        description="Stable uuid4 hex assigned by AlertService; client dedup key."
+    )
+    timestamp: str = Field(
+        description="ISO 8601 UTC — same string as the WS event payload."
+    )
+    track_id: int
+    object_class: ObjectClass
+    event_type: EventType
+    frame_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Basename of the saved JPEG (e.g. `1776920585551_1_enter.jpg`). "
+            "Fetch the image via `GET /frames/{frame_path}`. Null when no "
+            "snapshot exists for this alert."
+        ),
+    )
