@@ -250,13 +250,19 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
             src={uploaded.blobUrl}
             playsInline
             muted
-            controls
-            // Deliberately NOT looped. PO-directed 2026-04-23: on
-            // EOF the video pauses at the last frame, and the
-            // operator can click "Re-process video" to re-run the
-            // pipeline explicitly. Looping was confusing — bboxes
-            // stuck on the last prediction while the video silently
-            // restarted.
+            aria-label="Uploaded clip playback, controlled by the application"
+            // PO-directed 2026-04-23: the operator shall not
+            // interact with the uploaded clip directly (no pause,
+            // no scrub, no mute). Playback is driven entirely by
+            // the gated autoplay effect + Re-process button; native
+            // controls are omitted to enforce that flow. Side
+            // effect: removes the "user-beat-us-to-play" race the
+            // autoplay gate previously had to defend against, since
+            // no native play widget exists for the user to click.
+            //
+            // Not looped. On EOF the video pauses at the last frame
+            // and the operator can click "Re-process video" to
+            // re-run.
           />
         )}
 
