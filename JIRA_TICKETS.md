@@ -148,6 +148,26 @@ Benchmark YOLOv8n on the actual demo laptop at `imgsz` values 640 / 416 / 320, 6
 - Inference runs in a dedicated worker thread with a size-1 queue; latest-wins dropping
 - Errors logged but never crash the WS handler
 
+### NW-1105 (BACKUP, not MVP)
+
+**Type:** Task
+**Title:** Loosen ByteTrack defaults to reduce ID switches during brief detection gaps
+**Goal:** Reduce duplicate `enter` alerts caused by the tracker losing a single person's ID across short detection dropouts (partial occlusion, motion blur, brief confidence dips).
+
+**Context (observed during NW-1402 QA on 2026-04-22):** A single person walking into and out of a zone produced 3 consecutive `enter` events (track_ids 1, 3, 6) with no `exit` events in between before the real exit fired. Root cause is ByteTrack orphaning the track when YOLO detection drops for more than `track_buffer=30` frames; a subsequent re-detection opens a fresh ID, which NW-1303's first-sighting-inside rule correctly emits as a new `enter`. The alert pipeline (NW-1302/1303/1304/1402) is working correctly — the limitation is upstream in the tracker.
+
+**Acceptance Criteria**
+- Ship a custom `backend/storage/models/neurawatch_tracker.yaml` based on Ultralytics' bundled `bytetrack.yaml`, with:
+  - `track_buffer: 90` (9 s @ 10 FPS) — lost tracks stay "re-id-able" longer
+  - `track_high_thresh` / `new_track_thresh` tuned to discourage opening brand-new IDs for a briefly-lost subject
+- Plumb the path into `InferenceService` via the existing `_TRACKER_CONFIG` constant (or a settings override) without breaking the NW-1103 session-guard path
+- Manual verification: walking into a zone, turning sideways for ~1 s, continuing in and back out must produce exactly 1 `enter` and 1 `exit` in the DB for the same `track_id` ≥50 % of attempts (matches the NW-1103 occlusion AC, just at a bigger occlusion budget)
+- Backend pytest suite still green (no new tests required, but the swap must not regress `test_inference_parsing.py` / `test_session_guard.py`)
+
+**Apply when:** the MVP demo reveals the duplicate-enter pattern as distracting during the Loom narration. Skip if the NW-1602 dry-run of the Loom narrates the limitation cleanly as a "known tradeoff + what +4 weeks would add" talking point — in that case, keep the ByteTrack defaults.
+
+**Do NOT attempt** swapping to a ReID-augmented tracker (BoT-SORT with OSNet, StrongSORT, etc.) before Friday — those have their own weights download, FPS cost, and test surface. Out of scope for the deadline.
+
 ## Epic NW-1200: Frontend Video Input and Live Feed
 
 **Epic Goal:** Provide the user-facing video experience, including webcam input, uploaded video support, frame streaming, and live overlay rendering.
@@ -502,6 +522,7 @@ These were explicitly cut after the polished-plan review and should not be imple
 - NW-1205 (remaining UI states)
 - NW-1501 FPS soak test
 - NW-1504 ngrok + second-device verification
+- NW-1105 tracker tuning — **backup plan**; apply only if Loom dry-run shows the duplicate-enter pattern is distracting
 
 ### Friday 04-24
 
