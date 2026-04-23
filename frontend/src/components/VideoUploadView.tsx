@@ -154,6 +154,31 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
     setPickedFile(file)
   }
 
+  const handleReprocess = () => {
+    // Seek the video back to the start and start playback. `play()`
+    // can reject on autoplay-blocked state; the muted attribute
+    // keeps this a non-issue on every modern browser, but we still
+    // swallow so a failed seek doesn't turn into an unhandled
+    // rejection.
+    const v = videoRef.current
+    if (v !== null) {
+      try {
+        v.currentTime = 0
+      } catch {
+        // Some browsers throw if the video metadata isn't loaded
+        // yet; rare at this point in the flow because the first
+        // play() already happened. Safe to ignore.
+      }
+      void v.play().catch(() => undefined)
+    }
+    // Reducer wipes the prediction buffer + flips phase to 'ready'.
+    // The sender effect (phase==='ready') then re-fires
+    // `process_upload` on the still-open WS, which the server
+    // handles by cancelling any prior task, resetting tracker +
+    // alert + snapshot state, and starting a fresh pass.
+    dispatch({ type: 'upload/restart' })
+  }
+
   const handleSubmit = async () => {
     if (pickedFile === null) return
     dispatch({ type: 'upload/start' })
@@ -194,9 +219,12 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
             playsInline
             muted
             controls
-            // Loop so operators can re-watch the clip after
-            // processing_complete without re-uploading.
-            loop
+            // Deliberately NOT looped. PO-directed 2026-04-23: on
+            // EOF the video pauses at the last frame, and the
+            // operator can click "Re-process video" to re-run the
+            // pipeline explicitly. Looping was confusing — bboxes
+            // stuck on the last prediction while the video silently
+            // restarted.
           />
         )}
 
@@ -291,6 +319,15 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
             closed={state.zoneClosed}
             points={state.zonePoints.length}
           />
+          {phase === 'complete' && (
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handleReprocess}
+            >
+              Re-process video
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -310,7 +347,7 @@ function _bannerText(state: AppState): string | null {
     return `Processing · frame ${lastIdx + 1}`
   }
   if (state.uploadPhase === 'complete') {
-    return 'Processing complete — video now loops for review'
+    return 'Processing complete · video paused on last frame'
   }
   return null
 }

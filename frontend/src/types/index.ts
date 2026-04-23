@@ -312,6 +312,7 @@ export type Action =
   | { type: 'upload/success'; video: UploadedVideo }
   | { type: 'upload/error'; message: string }
   | { type: 'upload/complete'; totalFrames: number; alertsCreated: number }
+  | { type: 'upload/restart' }
 
 export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -704,6 +705,34 @@ export function appReducer(state: AppState, action: Action): AppState {
         uploadPhase: 'complete',
         status: 'idle',
         detections: [],
+        zoneDrawing: false,
+        zonePoints: state.zoneClosed ? state.zonePoints : [],
+      }
+
+    case 'upload/restart':
+      // Re-run processing on the same uploaded clip. Flow:
+      //   1. Clear prediction buffer so stale bboxes from the prior
+      //      run don't bleed into the start of the new one.
+      //   2. Flip phase back to 'ready' so the sender effect in
+      //      VideoUploadView re-fires `process_upload` on the
+      //      existing (still-open) WebSocket.
+      //   3. Set status='processing' immediately for UX continuity —
+      //      the user clicked a "re-run" button, surface that.
+      //   4. Committed polygon survives (operator typically re-runs
+      //      to validate the same zone); in-progress sketches go.
+      //
+      // Alerts from the prior run stay in the panel — server emits
+      // unique alert_ids each time, so dedup-by-alert_id appends new
+      // events instead of overwriting. Operator can tell runs apart
+      // by timestamp. Wiping alerts requires session/reset.
+      if (state.uploadedVideo === null) return state
+      return {
+        ...state,
+        uploadPhase: 'ready',
+        status: 'processing',
+        uploadPredictions: [],
+        detections: [],
+        lastEvents: [],
         zoneDrawing: false,
         zonePoints: state.zoneClosed ? state.zonePoints : [],
       }
