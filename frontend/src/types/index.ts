@@ -213,6 +213,7 @@ export type Action =
   | { type: 'alerts/enrich'; alert: Alert }
   | { type: 'alerts/select'; alertId: string | null }
   | { type: 'alerts/clear-new'; alertIds: string[] }
+  | { type: 'session/reset' }
 
 export function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -476,6 +477,32 @@ export function appReducer(state: AppState, action: Action): AppState {
         alerts: state.alerts.map((a) =>
           action.alertIds.includes(a.alert_id) ? { ...a, isNew: false } : a,
         ),
+      }
+
+    case 'session/reset':
+      // NW-1405: Full wipe. The HTTP handler has already cleared DB
+      // rows, unlinked frame JPEGs, and reset the ByteTrack IDs; the
+      // reducer mirrors that on the client side so the UI returns to
+      // a cold-boot appearance.
+      //
+      // `cameraActive` flips false so WebcamView's WS-lifecycle effect
+      // tears down the socket (per design-specs §Interactions:
+      // "disconnects WS, returns to idle"). The MediaStream track
+      // teardown lives inline in the Reset button handler — the
+      // reducer can't call imperative APIs. The 'idle' status guards
+      // a subsequent media/ready from auto-recovering an 'error' state
+      // (see media/ready's comment); resetting from 'error' through
+      // session/reset is the one path that CAN clear the pin.
+      //
+      // No explicit zone_clear is sent on the wire here (unlike
+      // stopCamera, which does): per-WS-connection ZoneService is
+      // recreated on reconnect, so the server has no zone state to
+      // ghost. If a future ticket keeps any app-level prefs on state
+      // (theme, panel width) that should SURVIVE reset, reshape this
+      // return to spread `initialAppState` then re-attach the
+      // preserved scalars — today's amnesia path wipes them all.
+      return {
+        ...initialAppState,
       }
 
     default:

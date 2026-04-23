@@ -31,7 +31,14 @@ export function App() {
 
   return (
     <div className="app">
-      <StatusBar status={state.status} fps={state.stats?.fps ?? null} />
+      <StatusBar
+        status={state.status}
+        fps={state.stats?.fps ?? null}
+        dispatch={dispatch}
+        alertsCount={state.alerts.length}
+        hasZone={state.zoneClosed || state.zonePoints.length > 0}
+        cameraActive={state.cameraActive}
+      />
       <main className="app__main">
         {/* NW-1202 VideoSourceSelector lands to the left of WebcamView. */}
         <WebcamView state={state} dispatch={dispatch} />

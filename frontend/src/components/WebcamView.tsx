@@ -125,19 +125,25 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
     }
   }, [])
 
-  // Entering `error` (pinned, per spec §System States) means the
-  // pipeline is dead — we can't use the webcam for anything until
-  // Reset Demo (NW-1405). Release the tracks so the camera LED
-  // doesn't stay lit during an unrecoverable state. We deliberately
-  // do NOT dispatch media/stop; status must stay at 'error' per the
-  // reducer invariant.
+  // MediaStream teardown on any transition that should release the
+  // camera LED. Fires when cameraActive flips false (media/stop,
+  // media/denied, media/error, NW-1405 session/reset) OR when status
+  // gets pinned to 'error' while cameraActive is still true (the
+  // ws/close retry=false path — the pipeline is dead but the reducer
+  // doesn't touch cameraActive on WS close, so this effect is what
+  // actually kills the webcam LED).
+  //
+  // stopCamera() already releases tracks synchronously before it
+  // dispatches media/stop — this effect is a no-op in that path, but
+  // necessary for every other cameraActive-false transition. Calling
+  // stopTracks on already-stopped tracks is safe.
   useEffect(() => {
-    if (state.status !== 'error') return
+    if (state.cameraActive && state.status !== 'error') return
     stopTracks(streamRef.current)
     streamRef.current = null
     const video = videoRef.current
     if (video !== null) video.srcObject = null
-  }, [state.status])
+  }, [state.cameraActive, state.status])
 
   // Outbound zone sync (NW-1301). Whenever the client zoneVersion
   // advances, send the server either a `zone_update` (we have a
@@ -433,11 +439,11 @@ function DeniedPanel({ error, onRetry, retryRef }: PanelProps) {
   )
 }
 
-function ErrorPanel({ error, retryRef }: PanelProps) {
+function ErrorPanel({ error }: PanelProps) {
   // `error` status is pinned per spec §System States — recovery
-  // requires explicit Reset Demo (NW-1405). Retry would silently
-  // no-op today (reducer doesn't clear `error` on media/ready), so
-  // we surface that honestly instead of staging theater.
+  // requires explicit Reset Demo. Reset Demo now lives in the
+  // AppHeader (NW-1405), so we point the operator there rather than
+  // duplicating the CTA inline.
   return (
     <div
       className="webcam-view__alert webcam-view__alert--error"
@@ -450,17 +456,8 @@ function ErrorPanel({ error, retryRef }: PanelProps) {
         {error ?? 'The live pipeline hit an error it cannot recover from on its own.'}
       </p>
       <p className="webcam-view__lede">
-        Reset Demo will be wired in NW-1405. For now, refresh the page to reset state.
+        Click <strong>Reset Demo</strong> in the top right to clear state and start over.
       </p>
-      <button
-        ref={retryRef}
-        type="button"
-        className="btn btn--primary"
-        disabled
-        aria-disabled="true"
-      >
-        Waiting for Reset Demo
-      </button>
     </div>
   )
 }
