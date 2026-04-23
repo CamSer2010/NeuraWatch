@@ -11,8 +11,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .api.health import router as health_router
+from .api.routes_alerts import router as alerts_router
 from .api.routes_ws import router as ws_router
 from .config import get_settings
 from .db import init_db, open_db
@@ -85,6 +87,12 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # Ensure the frames dir exists BEFORE `StaticFiles(...)` is
+    # constructed — some Starlette versions check the directory at
+    # mount time, not on first request. The lifespan hook also mkdirs
+    # but runs after create_app; this defensive mkdir is idempotent.
+    settings.frames_dir.mkdir(parents=True, exist_ok=True)
+
     app = FastAPI(title="NeuraWatch", version="0.1.0", lifespan=lifespan)
 
     app.add_middleware(
@@ -97,6 +105,18 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(ws_router)
+    app.include_router(alerts_router)
+
+    # NW-1403: serve saved event frames at /frames/{filename}. The
+    # `directory=` arg pins StaticFiles to `backend/storage/frames/` —
+    # path traversal like `/frames/../etc/passwd` is blocked by
+    # Starlette. mkdir in the lifespan guarantees the dir exists
+    # before the app starts serving.
+    app.mount(
+        "/frames",
+        StaticFiles(directory=settings.frames_dir),
+        name="frames",
+    )
     return app
 
 
