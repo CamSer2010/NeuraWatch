@@ -28,6 +28,13 @@ backend/storage/frames/*
 *.sqlite
 *.sqlite-journal
 *.db
+# SQLite WAL-mode sidecar files (NW-1401 opens the DB with
+# journal_mode=WAL; these land next to the .db and shouldn't be
+# tracked either).
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
 
 # Uploaded videos
 backend/storage/uploads/*
