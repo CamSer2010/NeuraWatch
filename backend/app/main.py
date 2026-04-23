@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api.health import router as health_router
 from .api.routes_alerts import router as alerts_router
+from .api.routes_session import router as session_router
 from .api.routes_ws import router as ws_router
 from .config import get_settings
 from .db import init_db, open_db
@@ -74,6 +75,12 @@ async def lifespan(app: FastAPI):
     await init_db(db)
     app.state.db = db
 
+    # NW-1405 POST /session/reset reads this to locate the JPEGs it
+    # unlinks. Sharing via app.state (vs re-reading get_settings in
+    # the handler) mirrors the routes_alerts pattern and keeps tests
+    # from having to clear the lru_cache on settings overrides.
+    app.state.frames_dir = settings.frames_dir
+
     try:
         yield
     finally:
@@ -106,6 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(ws_router)
     app.include_router(alerts_router)
+    app.include_router(session_router)
 
     # NW-1403: serve saved event frames at /frames/{filename}. The
     # `directory=` arg pins StaticFiles to `backend/storage/frames/` —
