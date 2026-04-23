@@ -60,21 +60,25 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
   const uploaded = state.uploadedVideo
   const phase = state.uploadPhase
 
-  // WS lifecycle: open once we have a video_id to process, tear down
-  // on reset/unmount. Unlike webcam mode, the WS isn't tied to the
-  // MediaStream — it's tied to "we're actively asking the server to
-  // process a clip". After processing_complete the WS closes since
-  // the operator may re-upload another file, and we'd otherwise hold
-  // the single-session guard unnecessarily.
+  // WS lifecycle: open once we have an uploaded video, tear down
+  // when it clears (source switch / session reset / unmount). The
+  // effect depends on `uploaded` ONLY — not on `uploadPhase`. An
+  // earlier iteration included phase in the deps, which caused a
+  // disconnect/reconnect every time the first detection_result
+  // flipped phase 'ready' → 'processing'. The fresh socket never
+  // got a second process_upload (the sender effect only runs while
+  // phase === 'ready'), so the server's processing task
+  // WebSocketDisconnect-bailed after a single frame. Result:
+  // exactly one frame of overlays before the video kept playing
+  // with stale bboxes. Deps intentionally `[uploaded, dispatch]`
+  // only — adding phase would reintroduce the one-frame bug.
   useEffect(() => {
     if (uploaded === null) return
-    if (phase !== 'ready' && phase !== 'processing') return
-
     connectWs(WS_URL, dispatch, 'upload')
     return () => {
       disconnectWs()
     }
-  }, [uploaded, phase, dispatch])
+  }, [uploaded, dispatch])
 
   // Once we're in the 'ready' phase (server has the file; WS is
   // connecting), fire `process_upload` exactly once, retrying until
