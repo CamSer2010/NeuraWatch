@@ -6,7 +6,7 @@ import { VideoSourcePanel } from './components/VideoSourcePanel'
 import { VideoUploadView } from './components/VideoUploadView'
 import { WebcamView } from './components/WebcamView'
 import { fetchRecentAlerts } from './services/alertsClient'
-import { appReducer, initialAppState } from './types'
+import { ALERTS_PAGE_SIZE, appReducer, initialAppState } from './types'
 import './App.css'
 
 export function App() {
@@ -18,7 +18,7 @@ export function App() {
   // the demo; the panel's empty-state copy handles the UX.
   useEffect(() => {
     let cancelled = false
-    fetchRecentAlerts(50)
+    fetchRecentAlerts(ALERTS_PAGE_SIZE)
       .then((alerts) => {
         if (cancelled) return
         dispatch({ type: 'alerts/bootstrap', alerts })
@@ -65,6 +65,8 @@ export function App() {
         <AlertsPanel
           alerts={state.alerts}
           selectedAlertId={state.selectedAlertId}
+          alertsLoading={state.alertsLoading}
+          alertsHasMore={state.alertsHasMore}
           dispatch={dispatch}
         />
       </main>

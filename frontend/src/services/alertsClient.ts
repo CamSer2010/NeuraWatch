@@ -13,8 +13,13 @@
 import { API_BASE } from '../config'
 import type { Alert } from '../types'
 
-export async function fetchRecentAlerts(limit = 50): Promise<Alert[]> {
-  const res = await fetch(`${API_BASE}/alerts?limit=${limit}`)
+export async function fetchRecentAlerts(
+  limit = 50,
+  offset = 0,
+): Promise<Alert[]> {
+  const res = await fetch(
+    `${API_BASE}/alerts?limit=${limit}&offset=${offset}`,
+  )
   if (!res.ok) {
     throw new Error(`GET /alerts → ${res.status}`)
   }

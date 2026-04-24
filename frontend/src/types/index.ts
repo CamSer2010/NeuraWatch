@@ -161,6 +161,16 @@ export interface AppState {
   /** `alert_id` of the row rendered in the detail pane, or null when
    * no selection has been made yet. */
   selectedAlertId: string | null
+  /** True while a Load-More REST page is in flight; the AlertsPanel
+   * footer disables the button + swaps copy. */
+  alertsLoading: boolean
+  /** Set false the moment a Load-More page returns fewer rows than
+   * `ALERTS_PAGE_SIZE` — the server is out of older alerts so the
+   * AlertsPanel hides the Load More button. Bootstrap also sets it
+   * (true if the initial fetch returned a full page, false otherwise).
+   * Resets to `true` on `session/reset` so the next session can
+   * paginate again from a cold history. */
+  alertsHasMore: boolean
 
   // --- Zone polygon (NW-1301) ---
   //
@@ -251,6 +261,8 @@ export const initialAppState: AppState = {
   zoneVersion: 0,
   alerts: [],
   selectedAlertId: null,
+  alertsLoading: false,
+  alertsHasMore: true,
   videoSource: 'webcam',
   uploadedVideo: null,
   uploadPhase: 'idle',
@@ -269,10 +281,20 @@ export const initialAppState: AppState = {
 export const UPLOAD_BUFFER_MAX = 3000
 
 /** Upper bound on `state.alerts.length` to keep the working set
- * finite across long sessions. Matches the NW-1404 AC's "last 20
- * alerts" user-visible count with a 5× headroom so the dedup logic
- * doesn't discard alerts that are still rendered after a scroll. */
-export const ALERTS_MAX = 100
+ * finite across long sessions. Sized for a paginated UI: with
+ * `ALERTS_PAGE_SIZE = 50` the operator can Load More twenty times
+ * before WS-pushed alerts start evicting the oldest manually-loaded
+ * page. The NW-1404 AC's "last 20 alerts" user-visible count is
+ * still respected — the panel scrolls; this just bounds memory. */
+export const ALERTS_MAX = 1000
+
+/** Page size for `GET /alerts?limit=…` calls — both the initial
+ * bootstrap and every Load-More click. Mirrors the server's clamp
+ * (max 500) but stays small so a slow network or a saturated DB
+ * doesn't stall the UI for long on a single page. The reducer uses
+ * this to decide whether the just-returned page was full (= more
+ * to fetch) or partial (= server is empty, hide the button). */
+export const ALERTS_PAGE_SIZE = 50
 
 /**
  * Action union. `media/*` and `ws/*` names mirror the spec's
@@ -307,6 +329,12 @@ export type Action =
   | { type: 'alerts/enrich'; alert: Alert }
   | { type: 'alerts/select'; alertId: string | null }
   | { type: 'alerts/clear-new'; alertIds: string[] }
+  // Load-More REST pagination. Start sets `alertsLoading=true`, success
+  // appends the new page + recomputes `alertsHasMore` from the page
+  // size, error just clears the loading flag (the user can retry).
+  | { type: 'alerts/load-more-start' }
+  | { type: 'alerts/load-more-success'; alerts: Alert[] }
+  | { type: 'alerts/load-more-error' }
   | { type: 'session/reset' }
   // NW-1202 upload lifecycle. No explicit 'upload/processing' action
   // — the ready → processing transition is derived inside `ws/frame`
@@ -582,8 +610,53 @@ export function appReducer(state: AppState, action: Action): AppState {
       combined.sort((a, b) =>
         a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0,
       )
-      return { ...state, alerts: combined.slice(0, ALERTS_MAX) }
+      // hasMore is decided from the REST page (not the merged list).
+      // A full page (== ALERTS_PAGE_SIZE) means the server probably has
+      // older rows; a partial page means the table is shallower than
+      // the page size. Counting the merged list would conflate WS-only
+      // entries with the REST page and falsely signal "more available".
+      return {
+        ...state,
+        alerts: combined.slice(0, ALERTS_MAX),
+        alertsHasMore: action.alerts.length >= ALERTS_PAGE_SIZE,
+      }
     }
+
+    case 'alerts/load-more-start':
+      return { ...state, alertsLoading: true }
+
+    case 'alerts/load-more-success': {
+      // Append the older page to the bottom of the existing list.
+      // Dedup by alert_id in case a WS push raced with the REST fetch
+      // and the same row landed via both paths. Existing entries win
+      // — they may already carry an `isNew` flag we don't want to
+      // strip. A full page means more remain on the server.
+      const known = new Set(state.alerts.map((a) => a.alert_id))
+      const fresh = action.alerts.filter((a) => !known.has(a.alert_id))
+      const combined = [...state.alerts, ...fresh]
+      // Sort defensively — REST is already newest-first per row, but
+      // a WS push during the load could have left the merged list
+      // out of order at the boundary.
+      combined.sort((a, b) =>
+        a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0,
+      )
+      return {
+        ...state,
+        alerts: combined.slice(0, ALERTS_MAX),
+        alertsLoading: false,
+        // hasMore reflects whether the server's response was a FULL
+        // page. Using `combined.length` here would falsely set false
+        // whenever every fresh row was already in `state.alerts` via
+        // WS — which happens routinely when an alert fires faster
+        // than the operator clicks Load More.
+        alertsHasMore: action.alerts.length >= ALERTS_PAGE_SIZE,
+      }
+    }
+
+    case 'alerts/load-more-error':
+      // Don't flip hasMore — the user can retry. Just clear the
+      // loading flag so the button re-enables.
+      return { ...state, alertsLoading: false }
 
     case 'alerts/enrich':
       // Lazy detail fetch came back — stamp `id` / `frame_path` on

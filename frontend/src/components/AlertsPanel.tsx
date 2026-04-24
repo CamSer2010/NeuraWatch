@@ -1,7 +1,8 @@
 import type { AnimationEvent, Dispatch } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { fetchAlertById, frameUrl } from '../services/alertsClient'
+import { fetchAlertById, fetchRecentAlerts, frameUrl } from '../services/alertsClient'
+import { ALERTS_PAGE_SIZE } from '../types'
 import type { Action, Alert } from '../types'
 import './AlertsPanel.css'
 
@@ -53,10 +54,11 @@ import './AlertsPanel.css'
 export interface AlertsPanelProps {
   alerts: Alert[]
   selectedAlertId: string | null
+  alertsLoading: boolean
+  alertsHasMore: boolean
   dispatch: Dispatch<Action>
 }
 
-const LIST_VISIBLE_COUNT = 20 // AC: "last 20 alerts"
 // Animation name in AlertsPanel.css we listen for on the row to
 // know when the 2 s tint has completed. Tied to the keyframe name
 // rather than a React setTimeout so bursts don't reset each other's
@@ -67,6 +69,8 @@ const NEW_TINT_ANIMATION_NAME = 'alerts-panel-tint'
 export function AlertsPanel({
   alerts,
   selectedAlertId,
+  alertsLoading,
+  alertsHasMore,
   dispatch,
 }: AlertsPanelProps) {
   const selected = useMemo(
@@ -117,14 +121,41 @@ export function AlertsPanel({
     }
   }, [selected, dispatch])
 
-  const visibleAlerts = alerts.slice(0, LIST_VISIBLE_COUNT)
+  // Visually-hidden announcement for screen readers. Updated after a
+  // successful load-more so AT users get an audible "N older alerts
+  // loaded" cue that sighted users get from the list expanding under
+  // them. Cleared on selection / unload so it doesn't replay stale.
+  const [loadAnnouncement, setLoadAnnouncement] = useState('')
+
+  const handleLoadMore = async () => {
+    // `offset = alerts.length` is safe under WS races: the server
+    // returns rows in `timestamp DESC` order, and any WS push during
+    // the click has already delivered the newest row to `state.alerts`.
+    // Asking for `offset=alerts.length` therefore skips exactly the
+    // rows already in memory, never duplicates and never skips.
+    const sizeBefore = alerts.length
+    dispatch({ type: 'alerts/load-more-start' })
+    try {
+      const next = await fetchRecentAlerts(ALERTS_PAGE_SIZE, sizeBefore)
+      dispatch({ type: 'alerts/load-more-success', alerts: next })
+      setLoadAnnouncement(
+        next.length === 0
+          ? 'No older alerts.'
+          : `Loaded ${next.length} older alert${next.length === 1 ? '' : 's'}.`,
+      )
+    } catch (err) {
+      console.warn('[AlertsPanel] load-more failed', err)
+      dispatch({ type: 'alerts/load-more-error' })
+      setLoadAnnouncement('Load more failed. Try again.')
+    }
+  }
 
   return (
     <aside className="alerts-panel" aria-label="Recent alerts">
       <header className="alerts-panel__header">
         <h2 className="alerts-panel__title">Alerts</h2>
         <span className="alerts-panel__count" aria-live="polite">
-          {alerts.length === 0 ? '—' : `${alerts.length} total`}
+          {alerts.length === 0 ? '—' : `${alerts.length} loaded`}
         </span>
       </header>
 
@@ -137,7 +168,7 @@ export function AlertsPanel({
         </div>
       ) : (
         <ul className="alerts-panel__list" role="list">
-          {visibleAlerts.map((alert) => (
+          {alerts.map((alert) => (
             <AlertRow
               key={alert.alert_id}
               alert={alert}
@@ -153,8 +184,38 @@ export function AlertsPanel({
               }
             />
           ))}
+          {alertsHasMore ? (
+            <li className="alerts-panel__load-more" role="presentation">
+              <button
+                type="button"
+                className="btn alerts-panel__load-more-btn"
+                onClick={handleLoadMore}
+                disabled={alertsLoading}
+                aria-busy={alertsLoading}
+              >
+                {alertsLoading ? 'Loading…' : 'Load more'}
+              </button>
+            </li>
+          ) : (
+            // Terminal sentinel — once the server is exhausted, the
+            // reviewer wanted explicit closure rather than a silently
+            // disappearing button. Reads "No older alerts" so the
+            // operator knows the list is complete.
+            <li className="alerts-panel__list-end" role="presentation">
+              <span className="alerts-panel__list-end-label">
+                No older alerts
+              </span>
+            </li>
+          )}
         </ul>
       )}
+
+      {/* Polite live region for AT users — only one source of
+       * announcement updates at a time so it doesn't fight with the
+       * header count's own `aria-live`. */}
+      <span className="alerts-panel__sr-only" aria-live="polite">
+        {loadAnnouncement}
+      </span>
 
       <AlertDetail alert={selected} loading={frameLoading} error={frameError} />
     </aside>
