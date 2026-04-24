@@ -76,6 +76,7 @@ ngrok http 8000
 - **Inference runs on the host laptop.** The ngrok URL only works while the laptop is on and the uvicorn + ngrok processes are alive.
 - **Free-tier ngrok URLs rotate on restart.** The link from yesterday's demo will not work today.
 - **Free-tier ngrok has a per-minute request cap.** Fine for a single demo browser; do not stress-test through the tunnel.
+- **Through-tunnel FPS is RTT-bound to ~8 FPS, not bandwidth-bound.** The WS client uses in-flight backpressure (one frame outstanding at a time; see `frontend/src/services/wsClient.ts`), so effective FPS ≈ 1 / round-trip-time. Free-tier ngrok routes traffic through a US edge POP, which from CDMX adds ~100–130 ms RTT per frame → ~8 FPS ceiling. Bandwidth is not the bottleneck (a 640×480 JPEG ≈ 50 KB, so 10 FPS is only ≈ 4 Mbps). Paid ngrok does **not** fix this — edge POP locations are shared across tiers unless you buy fixed-region enterprise. **For the NW-1501 ≥10 FPS AC, run the soak test against `http://localhost:8000` directly** (the ticket's AC specifies "webcam path at locked `imgsz`", not "through a tunnel"). The tunnel is the shareability affordance, not the FPS surface.
 
 ## Performance
 
