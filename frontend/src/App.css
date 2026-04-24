@@ -1,7 +1,16 @@
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* Height-bounded (not min-height) so the AlertsPanel's internal
+   * scroll container actually has a ceiling. With min-height the
+   * panel's `flex: 1` grows past the viewport and the whole page
+   * scrolls — the list never hits its `overflow-y: auto`. The
+   * webcam stage is fixed at 640×480 so the left column always
+   * fits within the typical demo viewport (≥720p); on shorter
+   * viewports `.app__source` overflow stays hidden rather than
+   * pushing the page down. */
+  height: 100vh;
+  overflow: hidden;
   background: var(--bg-0);
   color: var(--ink-0);
 }
@@ -29,6 +38,11 @@
   flex-direction: column;
   gap: var(--sp-4);
   align-items: flex-start;
+  /* Pair with `.app`'s viewport bound: lets the column shrink rather
+   * than push the page taller when content (slates, banners) would
+   * exceed the available height. */
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* On narrow viewports (<900 px) let the alerts panel stack under
