@@ -45,8 +45,17 @@ backend/storage/uploads/*
 .env.local
 .env.*.local
 
-# Claude Code (local-only — auto-mutated by the CLI per user)
+# Claude Code (local-only — auto-mutated by the CLI per user). Both
+# `settings.local.json` and any runtime state files (e.g. the
+# scheduled-task lock the loop CLI maintains) are user-shaped and
+# should never be committed.
 .claude/settings.local.json
+.claude/*.lock
+
+# Scratch dir — sometimes used for ad-hoc DB experiments or
+# benchmark scratchpads. Empty in a clean checkout; ignored so any
+# future leftover doesn't dirty the working tree.
+backend/tmp/
 
 # OS
 .DS_Store
