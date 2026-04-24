@@ -1,0 +1,95 @@
+{
+  "duration_sec": 600.02,
+  "frames_sent": 23165,
+  "responses": 23165,
+  "mean_client_fps": 38.61,
+  "mean_server_fps": 38.67,
+  "p50_server_fps": 38.83,
+  "p95_server_fps": 39.16,
+  "min_minute_fps": 29.58,
+  "minute_buckets": [
+    {
+      "minute": 1,
+      "samples": 2321,
+      "mean_fps": 38.76,
+      "min_fps": 30.67,
+      "p50_fps": 38.95
+    },
+    {
+      "minute": 2,
+      "samples": 2317,
+      "mean_fps": 38.65,
+      "min_fps": 31.91,
+      "p50_fps": 38.77
+    },
+    {
+      "minute": 3,
+      "samples": 2319,
+      "mean_fps": 38.69,
+      "min_fps": 30.25,
+      "p50_fps": 38.87
+    },
+    {
+      "minute": 4,
+      "samples": 2319,
+      "mean_fps": 38.7,
+      "min_fps": 32.3,
+      "p50_fps": 38.82
+    },
+    {
+      "minute": 5,
+      "samples": 2315,
+      "mean_fps": 38.66,
+      "min_fps": 30.39,
+      "p50_fps": 38.84
+    },
+    {
+      "minute": 6,
+      "samples": 2311,
+      "mean_fps": 38.61,
+      "min_fps": 29.58,
+      "p50_fps": 38.8
+    },
+    {
+      "minute": 7,
+      "samples": 2318,
+      "mean_fps": 38.67,
+      "min_fps": 33.34,
+      "p50_fps": 38.84
+    },
+    {
+      "minute": 8,
+      "samples": 2313,
+      "mean_fps": 38.61,
+      "min_fps": 32.39,
+      "p50_fps": 38.8
+    },
+    {
+      "minute": 9,
+      "samples": 2320,
+      "mean_fps": 38.71,
+      "min_fps": 33.96,
+      "p50_fps": 38.82
+    },
+    {
+      "minute": 10,
+      "samples": 2307,
+      "mean_fps": 38.59,
+      "min_fps": 30.92,
+      "p50_fps": 38.78
+    }
+  ],
+  "server_inference_ms": {
+    "p50": 16.85,
+    "p95": 17.68,
+    "p99": 20.4
+  },
+  "client_rtt_ms": {
+    "p50": 24.15,
+    "p95": 25.18,
+    "p99": 28.89
+  },
+  "pass": true,
+  "floor_fps": 10.0,
+  "degradation_floor_fps": 9.0
+}
