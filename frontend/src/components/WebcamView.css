@@ -154,3 +154,76 @@
   background: rgba(24, 225, 217, 0.06);
   border-color: rgba(24, 225, 217, 0.25);
 }
+
+/* NW-1205 system banners for model-loading + disconnected.
+ *
+ * Top-center pill so it doesn't collide with the bottom-center drawing
+ * / no-zone hints. Two tones keyed to the design-spec state palette:
+ *   - cyan   → model-loading (pre-`live`, waiting on first stats)
+ *   - amber  → disconnected  (WS close w/ retry pending; spec §System
+ *                             States: "amber dot · feed pauses last
+ *                             frame · auto-retry once")
+ * Uses the same pill shape + bg-1 alpha as the bottom hint so the two
+ * read as a single visual family. `pointer-events: none` keeps the
+ * banners decorative — they never steal focus from the underlying
+ * draw surface. prefers-reduced-motion disables the loading dot pulse
+ * per WCAG AA + design-spec a11y floor. */
+.webcam-view__banner {
+  position: absolute;
+  top: var(--sp-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: rgba(15, 22, 32, 0.9); /* bg-1 with alpha */
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.webcam-view__banner--loading {
+  color: var(--cyan);
+  background: rgba(24, 225, 217, 0.08);
+  border-color: rgba(24, 225, 217, 0.28);
+}
+
+.webcam-view__banner--disconnected {
+  color: var(--amber);
+  background: rgba(245, 165, 36, 0.1);
+  border-color: rgba(245, 165, 36, 0.32);
+}
+
+.webcam-view__banner__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.webcam-view__banner--loading .webcam-view__banner__dot {
+  /* Cadence comes from tokens.css `--d-pulse` (1400ms) — the same one
+   * StatusBadge's pulse uses, so the loading cue reads as a single
+   * "system waiting" rhythm across the top header + the stage. */
+  animation: webcam-view-banner-pulse var(--d-pulse) ease-in-out infinite;
+}
+
+@keyframes webcam-view-banner-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .webcam-view__banner--loading .webcam-view__banner__dot {
+    animation: none;
+    opacity: 0.85;
+  }
+}

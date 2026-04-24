@@ -294,6 +294,33 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
           videoRef={videoRef}
         />
 
+        {/* NW-1205 system banners. Gated on `showStage` so they only
+         * surface while a video is loaded + visible — during upload
+         * / idle the drop-target owns the surface and a banner would
+         * collide with it. */}
+        {showStage && state.status === 'model-loading' && (
+          <p
+            className="webcam-view__banner webcam-view__banner--loading"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span className="webcam-view__banner__dot" aria-hidden="true" />
+            Loading model…
+          </p>
+        )}
+        {showStage && state.status === 'disconnected' && (
+          <p
+            className="webcam-view__banner webcam-view__banner--disconnected"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span className="webcam-view__banner__dot" aria-hidden="true" />
+            Connection lost · retrying
+          </p>
+        )}
+
         {state.zoneDrawing && (
           <p className="webcam-view__hint" role="status">
             Click to add vertex · Close Zone when ready · Esc to cancel
