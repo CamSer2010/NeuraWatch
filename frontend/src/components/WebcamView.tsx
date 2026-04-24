@@ -312,6 +312,40 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
           onCancelDraw={() => dispatch({ type: 'zone/cancel-draw' })}
         />
 
+        {/* NW-1205 system banners. Top-center; never overlap with the
+         * bottom-center hints below. `role="status"` + `aria-live="polite"`
+         * so screen readers announce transitions without interrupting
+         * ongoing speech.
+         *
+         * model-loading only surfaces while the webcam is actually
+         * feeding frames — during camera-denied / error / pure-idle the
+         * slate panels carry the messaging and a banner would be noise.
+         * disconnected is scoped the same way: the stage freezes on the
+         * last frame (per spec §System States) and the banner explains
+         * why the feed stopped updating. */}
+        {state.cameraActive && state.status === 'model-loading' && (
+          <p
+            className="webcam-view__banner webcam-view__banner--loading"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span className="webcam-view__banner__dot" aria-hidden="true" />
+            Loading model…
+          </p>
+        )}
+        {state.cameraActive && state.status === 'disconnected' && (
+          <p
+            className="webcam-view__banner webcam-view__banner--disconnected"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span className="webcam-view__banner__dot" aria-hidden="true" />
+            Connection lost · retrying
+          </p>
+        )}
+
         {/* Drawing hint pill — spec §3 drawing polygon copy. Sits
          * bottom-center of the stage, above the video and the canvas
          * overlay. */}
