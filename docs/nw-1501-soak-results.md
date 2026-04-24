@@ -110,14 +110,14 @@ Read the FPS readout in the StatusBar every 10 seconds. Mean must be ≥10.
 
 | t (s) | FPS | Notes |
 |---|---|---|
-| 10 |  |  |
-| 20 |  |  |
-| 30 |  |  |
-| 40 |  |  |
-| 50 |  |  |
-| 60 |  |  |
+| 10 | 32 | - |
+| 20 | 35 | - |
+| 30 | 34 | - |
+| 40 | 35 | - |
+| 50 | 35 | - |
+| 60 | 36 | - |
 
-Mean: **TBD**  · Pass (≥10): **☐**
+Mean: **34.5 FPS**  · Pass (≥10): **✅**
 
 ### 10-minute thermals observation
 
@@ -125,27 +125,29 @@ Read FPS every minute + note CPU behavior (fans audible, laptop warm, etc.). Any
 
 | t (min) | FPS | Laptop temp / fan | Notes |
 |---|---|---|---|
-| 1 |  |  |  |
-| 2 |  |  |  |
-| 3 |  |  |  |
-| 4 |  |  |  |
-| 5 |  |  |  |
-| 6 |  |  |  |
-| 7 |  |  |  |
-| 8 |  |  |  |
-| 9 |  |  |  |
-| 10 |  |  |  |
+| 1 | 31 | +---- / No | - |
+| 2 | 32 | +---- / No | Too much detections |
+| 3 | 34 | +---- / No | Less detections |
+| 4 | 36 | +---- / No | - |
+| 5 | 30 | ++--- / No | No detections |
+| 6 | 33 | ++--- / No | - |
+| 7 | 34 | ++--- / No | - |
+| 8 | 32 | ++--- / No | - |
+| 9 | 33 | ++--- / No | - |
+| 10 | 33 | ++--- / No | - |
 
-Min FPS observed: **TBD**  · Pass (no dip below 9): **☐**
+Min FPS observed: **30 FPS**  · Mean: **32.8 FPS** · Pass (no dip below 9): **✅**
+
+**Thermals:** laptop warmth progresses from `+` to `++` across the 10 minutes but the fan never engages. No FPS trending — minute 10 (33) is statistically indistinguishable from minute 1 (31). Detection-count variability ("too much detections" at m2, "no detections" at m5) did not translate into FPS swings, which is consistent with inference cost being dominated by the YOLO forward pass rather than bbox count. Pipeline is comfortably inside the hardware's steady-state envelope.
 
 ## Acceptance criteria check
 
 - [x] Sustained mean FPS ≥10 over 60s on the pipeline (headless proxy: 38.72)
-- [ ] Sustained mean FPS ≥10 over 60s on the webcam path (requires live browser run; fill Test 3 above)
+- [x] Sustained mean FPS ≥10 over 60s on the **webcam** path (Test 3: mean = 34.5 FPS, 3.4× the floor)
 - [x] Measured via `processing_stats` rolling window, shown in StatusBar (StatusBar already renders `stats.fps` per NW-1502)
 - [x] Resolution + model noted in README (640×480 capture, YOLOv8n at `imgsz=640`; see README Performance section)
 - [x] 10-minute sustained headless soak with no degradation below 9 FPS (per-minute min = 29.58 FPS, 3.3× the floor)
-- [ ] 10-minute sustained **webcam** soak + thermals observation (requires live browser run; fill Test 3 above)
+- [x] 10-minute sustained **webcam** soak + thermals observation (Test 3: mean = 32.8 FPS, min = 30 FPS; no fan engagement, no FPS trending)
 
 ## Notes
 
