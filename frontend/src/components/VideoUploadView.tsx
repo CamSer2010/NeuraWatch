@@ -60,6 +60,14 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
   const uploaded = state.uploadedVideo
   const phase = state.uploadPhase
 
+  // Ref tracks the last zoneVersion flushed over the current WS
+  // session. Reset to 0 on every new connect (see the WS lifecycle
+  // effect below) so Reset Demo doesn't leave it pinned at a stale
+  // value — the zone-sync effect's equality guard would otherwise
+  // swallow the first zone_update of the next session when its
+  // version happens to coincide with the stuck ref.
+  const lastSentZoneVersionRef = useRef<number>(0)
+
   // WS lifecycle: open once we have an uploaded video, tear down
   // when it clears (source switch / session reset / unmount). The
   // effect depends on `uploaded` ONLY — not on `uploadPhase`. An
@@ -74,6 +82,7 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
   // only — adding phase would reintroduce the one-frame bug.
   useEffect(() => {
     if (uploaded === null) return
+    lastSentZoneVersionRef.current = 0
     connectWs(WS_URL, dispatch, 'upload')
     return () => {
       disconnectWs()
@@ -164,7 +173,8 @@ export function VideoUploadView({ state, dispatch }: VideoUploadViewProps) {
   }, [uploaded])
 
   // Also sync the outbound zone to the WS (same pattern as WebcamView).
-  const lastSentZoneVersionRef = useRef<number>(0)
+  // `lastSentZoneVersionRef` itself is declared near the top of the
+  // component so the WS lifecycle effect can reset it on reconnect.
   useEffect(() => {
     if (state.zoneVersion === lastSentZoneVersionRef.current) return
     if (state.zoneVersion === 0) return

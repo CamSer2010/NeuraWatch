@@ -66,11 +66,23 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
     }
   }, [state.status])
 
+  // Ref tracks the last zoneVersion flushed over the current WS
+  // session. Reset to 0 on every new connect (see the WS lifecycle
+  // effect below) so Reset Demo doesn't leave it pinned at a stale
+  // value from the previous session — the equality guard in the
+  // zone-sync effect would otherwise swallow the first zone_update
+  // of the new session when its version happens to match the ref's
+  // stuck value (e.g. user draws first-ever zone v=1, Reset, draws
+  // new first zone v=1, ref=1 → no send → server never learns the
+  // polygon → no alerts).
+  const lastSentZoneVersionRef = useRef<number>(0)
+
   // WS lifecycle: connect when the webcam is active, disconnect when
   // it's not. The wsClient is a module-level singleton so repeated
   // connect/disconnect calls are idempotent within the app.
   useEffect(() => {
     if (state.cameraActive) {
+      lastSentZoneVersionRef.current = 0
       connectWs(WS_URL, dispatch, 'webcam')
       return () => {
         disconnectWs()
@@ -158,7 +170,8 @@ export function WebcamView({ state, dispatch }: WebcamViewProps) {
   // Using a ref for the last-sent version keeps the effect's deps
   // minimal; we want this to fire exactly once per zoneVersion tick,
   // regardless of which other parts of state changed alongside it.
-  const lastSentZoneVersionRef = useRef<number>(0)
+  // (The ref itself is declared near the top of the component so the
+  // WS lifecycle effect can reset it on reconnect.)
   useEffect(() => {
     if (state.zoneVersion === lastSentZoneVersionRef.current) return
     if (state.zoneVersion === 0) return // never sent; initial state
